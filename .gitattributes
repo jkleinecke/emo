@@ -1,0 +1,15 @@
+.gitignore !text !filter !merge !diff
+*.pdf !text !filter !merge !diff
+*.rs[[:space:]].gitignore[[:space:]]*.txt[[:space:]]*.md[[:space:]]/License[[:space:]]*.toml !text !filter !merge !diff
+*.xls[[:space:]]*.nes[[:space:]]*.chr[[:space:]]*.s[[:space:]]*.bin[[:space:]]*.inc filter=lfs diff=lfs merge=lfs -text
+*.rs !text !filter !merge !diff
+*.txt !text !filter !merge !diff
+*.md !text !filter !merge !diff
+/License !text !filter !merge !diff
+*.toml !text !filter !merge !diff
+*.xls filter=lfs diff=lfs merge=lfs -text
+*.nes filter=lfs diff=lfs merge=lfs -text
+*.chr filter=lfs diff=lfs merge=lfs -text
+*.s filter=lfs diff=lfs merge=lfs -text
+*.bin filter=lfs diff=lfs merge=lfs -text
+*.inc filter=lfs diff=lfs merge=lfs -text
