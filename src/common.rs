@@ -2,15 +2,15 @@ pub trait Clocked {
     fn clock(&mut self);
 }
 
-pub trait AddressSpace {
-    fn peek(&mut self, ptr: u16) -> u8;
-    fn poke(&mut self, ptr: u16, value: u8);
+pub trait Memory {
+    fn load(&mut self, ptr: u16) -> u8;
+    fn store(&mut self, ptr: u16, value: u8);
 }
 
-pub trait Savable {
-    fn save(&self, fh: &mut Write);
-    fn load(&mut self, fh: &mut Read);
-}
+// pub trait Savable {
+//     fn save(&self, fh: &mut Write);
+//     fn load(&mut self, fh: &mut Read);
+// }
 
 pub fn get_bit(x: u8, i: u8) -> u8 {
     return (x >> i) & 1;
