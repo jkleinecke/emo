@@ -122,7 +122,9 @@ impl Clocked for EmoC6502
         // First handle interrupts
         if self.status.contains(ProcessorStatus::Interrupt) // just assuming this means we need to handle the interrupts
         {
-
+            // and assuming we're only handling reset for now..
+            self.instr = BRK;
+            self.iclocks = 2;
         }
 
         // Actual Clock Cycle
@@ -137,9 +139,17 @@ impl Clocked for EmoC6502
             2 ..= 7 => // store address mode + handle instruction
             {
                 // just for LDA
-                assert!(self.instr == 0xA9);
+                assert!(self.instr == 0x00);
                 let operation = OPCODE_TABLE[self.instr as usize];   // decode the instruction
                 //assert!(operation.Operation == LDA);
+
+                match self.iclocks {
+                    2 => { /* push pc hi on stack */ }
+                    3 => { /* push pc lo on stack */ }
+                    4 => { /* push status on stack, reset, fetch pc lo*/ }
+                    5 => { /* save pc lo and fetch pc hi */ }
+                    6 => { /* save pc hi and fetch next instr */ }
+                }
 
                 // translate addressing mode
 
