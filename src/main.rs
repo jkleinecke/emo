@@ -7,7 +7,8 @@ mod c6502;
 use crate::nes::NesSystem;
 
 fn main() {
-    let nes = NesSystem::new();
+    let _nes
+     = NesSystem::new();
 
 
 }

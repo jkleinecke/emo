@@ -5,7 +5,7 @@
 
 use crate::common::{get_bit, Clocked, Memory};
 
-pub struct EmoC6502<'a> {
+pub struct EmoC6502 {
     pub a: u8,                      // Accumulator Register
     pub x: u8,                      // X Register
     pub y: u8,                      // Y Register
@@ -19,15 +19,13 @@ pub struct EmoC6502<'a> {
     pub brk:bool,             // break
     pub overflow:bool,             // overflow
     pub negative:bool,             // negative
-
-    pub memmap: &'a (Memory + 'a),             // Memory Access Bus
 }
 
-impl<'a> Clocked for EmoC6502<'a>
+impl Clocked for EmoC6502
 {
-    fn clock(&mut self)
+    fn clock(&mut self, memory: &mut impl Memory)
     {
-        let opscode = self.fetch(); // current ops code
+        let opscode = self.fetch(memory); // current ops code
         self.pc += 1;                   // move to the next instruction
 
         //self.S = StatusFlags::C | StatusFlags::Z;
@@ -38,7 +36,7 @@ impl<'a> Clocked for EmoC6502<'a>
 
         match opscode {
             0xA9 => {                   // LDA
-                let param = self.fetch();   // mem address to load
+                let param = self.fetch(memory);   // mem address to load
                 self.pc += 1;
                 self.a = param;
 
@@ -55,21 +53,8 @@ impl<'a> Clocked for EmoC6502<'a>
     }
 }
 
-impl<'a> Memory for EmoC6502<'a>
-{
-    fn load(&mut self, ptr: u16) -> u8 
-    {
-        return self.memmap.load(ptr);
-    }
-
-    fn store(&mut self, ptr: u16, value: u8)
-    {
-        self.memmap.store(ptr, value) ;
-    }
-}
-
-impl<'a> EmoC6502<'a> {
-    pub fn new(memory: &'a Memory) -> Self {
+impl EmoC6502 {
+    pub fn new() -> Self {
         EmoC6502 {
             a: 0,
             x: 0,
@@ -84,13 +69,11 @@ impl<'a> EmoC6502<'a> {
             brk:false,        
             overflow:false,
             negative:false,         
-
-            memmap: memory,                         // keep a reference to the memory bus
         }
     }
 
-    fn fetch(&mut self) -> u8 {
-        self.load(self.pc)
+    fn fetch(&mut self, memory: &mut impl Memory) -> u8 {
+        memory.load(self.pc)
     }
 
 }
