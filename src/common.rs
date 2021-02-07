@@ -1,12 +1,30 @@
+#![allow(unused_imports)]
+#![allow(non_upper_case_globals)]
+#![allow(dead_code)]
+#![allow(unused_variables)]
 
-
-pub trait Memory {
+pub trait MemoryBus {
     fn load(&mut self, ptr: u16) -> u8;
     fn store(&mut self, ptr: u16, value: u8);
 }
 
 pub trait Clocked {
-    fn clock(&mut self, memory: &mut impl Memory);
+    fn clock(&mut self);
+}
+
+pub struct WORD {}
+impl WORD {
+    pub fn hi(v: u16) -> u8 {
+        ((v >> 8) & 0xFF) as u8
+    }
+
+    pub fn lo(v: u16) -> u8 {
+        (v & 0xFF) as u8
+    }
+
+    pub fn make(hi:u8,lo:u8) -> u16 {
+        ((hi as u16) << 8) | (lo as u16)
+    }
 }
 
 // pub trait Savable {
@@ -14,8 +32,13 @@ pub trait Clocked {
 //     fn load(&mut self, fh: &mut Read);
 // }
 
-pub fn get_bit(x: u8, i: u8) -> u8 {
-    return (x >> i) & 1;
+// pub fn get_bit(x: u8, i: u8) -> u8 {
+//     return (x >> i) & 1;
+// }
+
+
+pub fn test_bit(x: u8, i: u8) -> bool {
+    return (x >> i) & 1 == 1;
 }
 
 // pub fn run_clocks(x: &mut dyn Clocked, num_clocks: u32) {

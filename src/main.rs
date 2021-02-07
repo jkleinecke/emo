@@ -1,14 +1,16 @@
 
 mod common;
-mod nes;
-mod memory;
+mod system;
+mod bus;
 mod c6502;
+mod tests;
 
-use crate::nes::NesSystem;
+extern crate bitflags;
+
+use crate::system::Nes;
 
 fn main() {
-    let _nes
-     = NesSystem::new();
+    let _nes = Nes::new();
 
 
 }
