@@ -10,7 +10,10 @@ use crate::bus::{BusInterface, BusControlStatus};
 use crate::operations::*;
 
 pub const PC_START: u16 = 0xFFFC;
-const SP_START: u8 = 0xFD;
+
+const STACK_BASE: u16 = 0x100;
+const STACK_START: u8 = 0xFF;
+
 const OP_BRK: u8 = 0x00;
 
 
@@ -41,7 +44,7 @@ impl ProcessorStatus {
     }
 
     pub fn initial() -> ProcessorStatus {
-        ProcessorStatus::Break | ProcessorStatus::Unused | ProcessorStatus::Interrupt   // 0x34
+        ProcessorStatus::Unused | ProcessorStatus::Interrupt   // 0x34
     }
 }
 
@@ -112,25 +115,22 @@ impl Clocked for EmoC6502
             }
             _ => // store address mode + handle instruction
             {
-                let opcode = OPCODE_TABLE[self.instr as usize];   // decode the instruction
+                let (opcode, address_mode, c1, c2) = OPCODE_TABLE[self.instr as usize];   // decode the instruction
                 let fetched = self.data;
 
                 // translate addressing mode
-                let operand:u8 = match opcode {
-                    (_,AddressingMode::Implicit,_,_) => fetched,
-                    (_,AddressingMode::Immediate,_,_) => fetched,
-                    _ => todo!("Not implemented address modes!"),
-                };
+                let (is_translation_done, operand) = self.fetch_operand(address_mode);     // translate the addressing mode
 
-                // finally perform the operation
-                let remaining_clocks = match opcode {
-                    (Operation::BRK, ..) => self.exec_op_brk(operand),
-                    (Operation::LDA, ..) => self.exec_op_lda(operand),
-                    _ => todo!("Not implemented instruction")
-                };
+                if is_translation_done
+                {
+                    // finally perform the operation
+                    let is_done = self.execute_opcode(opcode, operand) ;
 
-                // and fetch the next instruction
-                needs_instr = remaining_clocks == 0;    // no more clocks, get the next instruction
+                    // and fetch the next instruction
+                    needs_instr = is_done;    // no more clocks, get the next instruction
+
+                    //--TODO: verify clock cycles are correct
+                }
             }
         }
 
@@ -153,7 +153,7 @@ impl EmoC6502 {
             a: 0,
             x: 0,
             y: 0,
-            sp: SP_START,
+            sp: STACK_START,
             pc: PC_START,
 
             status: ProcessorStatus::initial(), 
@@ -191,6 +191,20 @@ impl EmoC6502 {
         self.data = v;
     }
 
+    fn stack_push(&mut self, v:u8) 
+    {
+        let addr = STACK_BASE + self.sp as u16;    // calc the stack pointer address
+        self.store(addr, v) ;               // queue up the bus write
+        self.sp -= 1;                       // decrement the stack pointer
+    }
+
+    fn stack_pop(&mut self)
+    {
+        self.sp += 1;                       // increment the stack pointer
+        let addr = STACK_BASE + self.sp as u16;    // calc the stack pointer address
+        self.fetch(addr) ;                  // queue up the bus read
+    }
+
     fn update_status(&mut self, result:u8)
     {
         self.status.set(ProcessorStatus::Zero, result == 0);
@@ -208,22 +222,73 @@ impl EmoC6502 {
         {
             // set the interrupt flag and reset the signals
             self.status.set(ProcessorStatus::Interrupt, true);
-            self.nmi = false;
-            self.irq = false;
         }
     }
 
-    fn exec_op_brk(&mut self, operand: u8) -> u8
+    fn fetch_operand(&mut self, mode: AddressingMode) -> (bool, u8)
+    {
+        match mode {
+            AddressingMode::Implicit => (true, 0),              // Implicit means the instruction doesn't use anything
+            AddressingMode::Immediate => (true,self.data),     // Immediate means to use the fetched value directly
+            AddressingMode::ZeroPage => match self.iclocks {
+                1 => { self.fetch_pc(); (false,0) }
+                2 => { (true,self.data) }
+                _ => { panic!() }
+            }
+            AddressingMode::ZeroPageX => match self.iclocks {
+                1 => { self.fetch_pc(); (false,0) }
+                2 => { /* Add to X register via ALU */ todo!("not done yet")}
+                3 => { /* fetch using ALU result */ }
+                4 => { (true, self.data) }
+            }
+            AddressingMode::Absolute => match self.iclocks {
+                1 => { self.fetch_pc(); (false,0) }
+                2 => { self.al = self.data; self.fetch_pc(); (false,0) }
+                3 => { self.fetch( WORD::make(self.data, self.al)); (false,0) }
+                4 => { (true,self.data) }
+            }
+            
+            _ => todo!("Not implemented address modes!"),
+        }
+    }
+    
+    fn execute_opcode(&mut self, opcode: Operation, operand: u8) -> bool
+    {
+        match opcode {
+            Operation::BRK => self.op_brk(),
+            Operation::TAX => self.op_tax(),
+            Operation::LDA => self.op_lda(operand),
+            _ => todo!("Not implemented instruction")
+        }
+    }
+
+    fn op_brk(&mut self) -> bool
     {
         match self.iclocks {
-            1 => { /* push pc hi on stack */ }
-            2 => { /* push pc lo on stack */ }
-            3 => { /* push status on stack, */ }
+            1 => { 
+                /* push pc hi on stack */
+                self.stack_push(WORD::hi(self.pc));
+            }
+            2 => { 
+                /* push pc lo on stack */
+                self.stack_push(WORD::lo(self.pc));
+            }
+            3 => { 
+                /* push status on stack, */
+                let status = self.status.bits 
+                    | ternary(self.is_interrupted(),    // d flag is only set on an interrupt
+                                (ProcessorStatus::Decimal | ProcessorStatus::Break).bits,
+                                ProcessorStatus::Break.bits);
+                
+                self.stack_push(status);
+            }
             4 => { 
                 /* reset, fetch pc lo */
                 self.pc = PC_START;
                 self.status.remove(ProcessorStatus::Interrupt);
                 self.reset = false;
+                self.nmi = false;
+                self.irq = false;
 
                 self.fetch_pc();
             }
@@ -235,19 +300,26 @@ impl EmoC6502 {
             6 => { 
                 /* save pc hi and fetch next instr */
                 self.pc = WORD::make(self.data, self.al);
-                return 0;
+                return true;        // break is over.. boo
             }
             _ => panic!("Incorrect instruction opcode handling, did not reset instr cycle counter properly")
         }
 
-        return 1;           // todo: make this more accurate
+        return false;           // not done yet
     }
 
-    fn exec_op_lda(&mut self, operand: u8) -> u8
+    fn op_tax(&mut self) -> bool
+    {
+        self.x = self.a ;
+        self.update_status(self.x) ;
+        return true;            // we're done
+    }
+
+    fn op_lda(&mut self, operand: u8) -> bool
     {
         self.a = operand;
         self.update_status(operand);
-        return 0;           // we're done, no more cycles
+        return true;           // we're done
     }
 }
 
