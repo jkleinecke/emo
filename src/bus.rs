@@ -3,8 +3,9 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum BusControlStatus {
+    None,
     Read,
     Write,
 }
@@ -24,6 +25,25 @@ impl Bus {
     pub fn new() -> Self {
         Bus {
             cpu_ram: [0;0xFFFF]
+        }
+    }
+
+    pub fn bus_clock(&mut self, interface:&mut impl BusInterface)
+    {
+        match interface.get_control_status() {
+            BusControlStatus::Read => {
+                // Read from the specified address and set the data
+                let addr = interface.get_address();
+                let data = self.load(addr);
+                interface.set_data(data);
+            }
+            BusControlStatus::Write => {
+                // Write the specified data to the specified address
+                let addr = interface.get_address();
+                let data = interface.get_data();
+                self.store(addr, data);
+            }
+            BusControlStatus::None => {/*do nothing*/}
         }
     }
 

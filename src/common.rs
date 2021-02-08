@@ -15,15 +15,15 @@ pub trait Clocked {
 pub struct WORD {}
 impl WORD {
     pub fn hi(v: u16) -> u8 {
-        ((v >> 8) & 0xFF) as u8
+        v.to_be_bytes()[0]
     }
 
     pub fn lo(v: u16) -> u8 {
-        (v & 0xFF) as u8
+        v.to_be_bytes()[1]
     }
 
     pub fn make(hi:u8,lo:u8) -> u16 {
-        ((hi as u16) << 8) | (lo as u16)
+        u16::from_be_bytes([hi,lo])
     }
 }
 
@@ -47,10 +47,10 @@ pub fn test_bit(x: u8, i: u8) -> bool {
 //     }
 // }
 
-// pub fn ternary<T>(cond: bool, on_true: T, on_false: T) -> T {
-//     if cond {
-//         on_true
-//     } else {
-//         on_false
-//     }
-// }
+pub fn ternary<T>(cond: bool, on_true: T, on_false: T) -> T {
+    if cond {
+        on_true
+    } else {
+        on_false
+    }
+}

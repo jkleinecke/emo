@@ -2,6 +2,7 @@
 mod common;
 mod system;
 mod bus;
+mod operations;
 mod c6502;
 mod tests;
 

@@ -7,17 +7,22 @@ use crate::c6502::{ProcessorStatus,PC_START};
 mod test {
     use super::*;
 
+    fn run_clocks(nes: &mut Nes, num_clocks: u32) {
+        for i in 0..num_clocks {
+            nes.clock();
+        }
+    }
+
     #[test]
     fn test_LDA_immediate() 
     {
         let mut nes = Nes::new();
         
         // setup some test instructions
-        nes.write_ram(PC_START as usize, vec![0x00,0x80]);   // little endian address to where the instructions start
-        nes.write_ram(0x8000,   vec![0xa9,0x05]);   // actual instructions
+        nes.load_program(&vec![0xa9,0x05]);   // 2 cycles
         
-        nes.reset();
-        nes.clock();
+        nes.reset();                         // 7 cycles
+        run_clocks(&mut nes, 9);
 
         assert_eq!(nes.cpu.a, 0x05);
         assert_eq!(nes.cpu.status.contains(ProcessorStatus::Zero), false);
@@ -29,8 +34,7 @@ mod test {
     {
         let mut nes = Nes::new();
 
-        nes.write_ram(PC_START as usize, vec![0x00,0x80]);   // little endian address to where the instructions start
-        nes.write_ram(0x8000,   vec![0xa9,0x00]);   // actual instructions
+        nes.load_program(&vec![0xa9,0x00]);   // actual instructions
         
         nes.reset();
         nes.clock();

@@ -32,7 +32,9 @@ impl Nes
 
     pub fn clock(&mut self)
     {
+        // CPU clock also gets a data bus clock
         self.cpu.clock();
+        self.bus.bus_clock(&mut self.cpu);
     }
 
     // TODO: this will eventually become load_cartridge
