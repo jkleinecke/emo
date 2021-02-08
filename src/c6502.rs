@@ -48,8 +48,8 @@ impl ProcessorStatus {
 impl BusInterface for EmoC6502 {
     fn get_control_status(&self) -> BusControlStatus {
 
-        ternary((self.bus_ctrl == BusControlStatus::Write) && self.reset  // don't allow writes on reset
-            , BusControlStatus::None  
+        ternary(self.reset              // don't allow writes on reset
+            , BusControlStatus::Read    // If you can't write, you must be reading .. signal can only be one or the other
             , self.bus_ctrl)        
     }
     fn get_address(&self) -> u16 {
@@ -166,7 +166,7 @@ impl EmoC6502 {
             address:0,
             data:0,
 
-            reset:false,
+            reset:true,
             nmi:false,
             irq:false,
 
@@ -203,11 +203,11 @@ impl EmoC6502 {
 
     fn poll_interrupts(&mut self) 
     {
-        if self.reset || self.nmi || self.irq 
+        if self.status.contains(ProcessorStatus::Interrupt) == false    // make sure we aren't already in an interrupt
+            && ( self.reset || self.nmi || self.irq )
         {
             // set the interrupt flag and reset the signals
             self.status.set(ProcessorStatus::Interrupt, true);
-            self.reset = false;
             self.nmi = false;
             self.irq = false;
         }
@@ -223,6 +223,7 @@ impl EmoC6502 {
                 /* reset, fetch pc lo */
                 self.pc = PC_START;
                 self.status.remove(ProcessorStatus::Interrupt);
+                self.reset = false;
 
                 self.fetch_pc();
             }

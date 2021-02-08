@@ -5,7 +5,6 @@
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum BusControlStatus {
-    None,
     Read,
     Write,
 }
@@ -43,7 +42,6 @@ impl Bus {
                 let data = interface.get_data();
                 self.store(addr, data);
             }
-            BusControlStatus::None => {/*do nothing*/}
         }
     }
 

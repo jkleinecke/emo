@@ -14,14 +14,13 @@ mod test {
     }
 
     #[test]
-    fn test_LDA_immediate() 
+    fn test_lda_immediate() 
     {
-        let mut nes = Nes::new();
+        let mut nes = Nes::new();   // 7 cycles for startup
         
         // setup some test instructions
-        nes.load_program(&vec![0xa9,0x05]);   // 2 cycles
+        nes.load_program(&vec![0xa9,0x05]);   // 2 cycles for the LDA
         
-        nes.reset();                         // 7 cycles
         run_clocks(&mut nes, 9);
 
         assert_eq!(nes.cpu.a, 0x05);
@@ -30,14 +29,14 @@ mod test {
     }
 
     #[test]
-    fn test_LDA_zero() 
+    fn test_lda_zero() 
     {
-        let mut nes = Nes::new();
-
-        nes.load_program(&vec![0xa9,0x00]);   // actual instructions
+        let mut nes = Nes::new();   // 7 cycles for startup
         
-        nes.reset();
-        nes.clock();
+        // setup some test instructions
+        nes.load_program(&vec![0xa9,0x00]);   // 2 cycles for the LDA
+        
+        run_clocks(&mut nes, 9);
 
         assert_eq!(nes.cpu.a, 0x00);
         assert_eq!(nes.cpu.status.contains(ProcessorStatus::Zero), true);

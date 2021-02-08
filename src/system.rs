@@ -46,6 +46,8 @@ impl Nes
         // Now tell the cpu where the program starts
         let start_addr = PROGRAM_START.to_le_bytes();
         self.bus.write_ram(PC_START as usize, &start_addr.to_vec());
+
+        self.reset();
     }
 }
 
