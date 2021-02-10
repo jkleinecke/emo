@@ -1332,7 +1332,7 @@ ADC - ADd with Carry
       result = (A & 0x0F) + (value & 0x0F) + c;
       // Invalid values may not add up properly... but they're invalid already, so why bother?
       if (result > 0x09)
-        result = (result - 0x0A) | 0x10;
+        result = (result - 0x0A) | 0x10;          
       result += (A & 0xF0) + (value & 0xF0);
 
       // Bugged 6502 code, taken from [5]

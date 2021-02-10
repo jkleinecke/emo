@@ -3,7 +3,7 @@ mod common;
 mod system;
 mod bus;
 mod operations;
-mod c6502;
+mod cpu2A03;
 mod tests;
 
 extern crate bitflags;

@@ -3,7 +3,7 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use crate::c6502::{EmoC6502,PC_START};
+use crate::cpu2A03::{Cpu2A03,PC_START};
 use crate::bus::{Bus,BusInterface};
 use crate::common::{MemoryBus,Clocked};
 
@@ -11,7 +11,7 @@ const SYSMEMSIZE: usize = 0xFFFF;
 const PROGRAM_START: u16 = 0x8000;
 
 pub struct Nes {
-    pub cpu:EmoC6502,
+    pub cpu:Cpu2A03,
     pub bus:Bus,
 }
 
@@ -20,7 +20,7 @@ impl Nes
     pub fn new() -> Self 
     {
         Nes {
-            cpu: EmoC6502::new(),
+            cpu: Cpu2A03::new(),
             bus: Bus::new(),
         }
     }

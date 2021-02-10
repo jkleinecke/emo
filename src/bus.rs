@@ -12,8 +12,8 @@ pub enum BusControlStatus {
 pub trait BusInterface {
     fn get_control_status(&self) -> BusControlStatus;
     fn get_address(&self) -> u16;
-    fn get_data(&self) -> u8;
-    fn set_data(&mut self, v:u8);
+    fn bus_data(&self) -> u8;
+    fn set_bus_data(&mut self, v:u8);
 }
 
 pub struct Bus {
@@ -34,12 +34,12 @@ impl Bus {
                 // Read from the specified address and set the data
                 let addr = interface.get_address();
                 let data = self.load(addr);
-                interface.set_data(data);
+                interface.set_bus_data(data);
             }
             BusControlStatus::Write => {
                 // Write the specified data to the specified address
                 let addr = interface.get_address();
-                let data = interface.get_data();
+                let data = interface.bus_data();
                 self.store(addr, data);
             }
         }
