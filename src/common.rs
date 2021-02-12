@@ -12,18 +12,33 @@ pub trait Clocked {
     fn clock(&mut self);
 }
 
-pub struct WORD {}
-impl WORD {
-    pub fn hi(v: u16) -> u8 {
-        v.to_be_bytes()[0]
+pub trait WORD {
+    fn hi(&self) -> u8;
+    fn lo(&self) -> u8;
+    fn make(hi:u8, lo:u8) -> u16;
+    fn set_hi(&mut self, hi:u8);
+    fn set_lo(&mut self, lo:u8); 
+}
+
+impl WORD for u16 {
+    fn hi(&self) -> u8 {
+        ((self << 8) & 0xFF) as u8
+    }
+    fn lo(&self) -> u8 {
+        (self & 0xFF) as u8
+    }
+    fn make(hi:u8, lo:u8) -> u16
+    {
+        return ((hi as u16) << 8) | (lo as u16);
+    }
+    fn set_hi(&mut self, hi:u8)
+    {
+        *self = ((hi as u16) << 8) | (self.lo() as u16) as u16;
     }
 
-    pub fn lo(v: u16) -> u8 {
-        v.to_be_bytes()[1]
-    }
-
-    pub fn make(hi:u8,lo:u8) -> u16 {
-        u16::from_be_bytes([hi,lo])
+    fn set_lo(&mut self, lo:u8)
+    {
+        *self = ((self.hi() as u16) << 8) | (lo as u16) as u16;
     }
 }
 

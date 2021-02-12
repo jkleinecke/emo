@@ -1,7 +1,7 @@
 #![allow(unused_imports)]
 
 use crate::system::Nes;
-use crate::c6502::{ProcessorStatus,PC_START};
+use crate::cpu6502::{ProcessorStatus,PC_START};
 
 #[cfg(test)]
 mod test {
