@@ -28,6 +28,47 @@ const STACK_START: u8 = 0xFF;
 
 const OP_BRK: u8 = 0x00;
 
+#[derive(Debug,Clone)]
+enum MicroOpcode {
+    NoOp,
+    Fetch,
+    Store,
+}
+
+impl Default for MicroOpcode {
+    fn default() -> Self { MicroOpcode::NoOp }
+}
+
+#[derive(Debug,Clone)]
+enum OpLocation {
+    A,
+    X,
+    Y,
+    StackPtr,
+    ProgramPtr,
+    ProgramPtrLo,
+    ProgramPtrHi,
+    InstrReg,
+    Ad,
+    AdLo,
+    AdHi,
+    Memory,
+}
+
+impl Default for OpLocation {
+    fn default() -> Self { OpLocation::Memory }
+}
+
+// Micro operation is a simple operation that only takes 1 cycle complete
+//--TODO: make sure the sizing is optimal for performance
+#[derive(Default,Debug,Clone)]
+struct MicroOp {
+    pub code: MicroOpcode,
+    pub src: OpLocation,
+    pub src_addr: u16,
+    pub dst: OpLocation,
+    pub dst_addr: u16,
+}
 
 bitflags! {
     #[derive(Default)]
@@ -92,6 +133,8 @@ pub struct Cpu6502 {
     ir: u8,                         // active instruction register
     ad: u16,                        // ADL / ADH internal register
 
+    ir_ops: [MicroOp;7],            // micro operations for the instruction (max of 7 cycles)
+
     // bus interface
     bus_ctrl: BusControlStatus,     // The R/W control flag
     bus_address: u16,               // The address pinout...
@@ -111,7 +154,7 @@ pub struct Cpu6502 {
 
 impl Clocked for Cpu6502
 {
-    fn clock(&mut self) 
+    fn clock_start(&mut self) 
     {
         if self.sync
         {
@@ -135,6 +178,10 @@ impl Clocked for Cpu6502
         self.ir_cycles += 1;
 
     }
+
+    fn clock_end(&mut self) {
+        
+    }
 }
 
 impl Cpu6502 {
@@ -151,6 +198,8 @@ impl Cpu6502 {
             ir_cycles: 0,
             ir:0,
             ad: 0,
+
+            ir_ops: Default::default(),
             
             bus_ctrl:BusControlStatus::Read,
             bus_address:0,

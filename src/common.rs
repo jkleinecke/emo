@@ -8,8 +8,11 @@ pub trait MemoryBus {
     fn store(&mut self, ptr: u16, value: u8);
 }
 
+// Useful for integration with a memory address bus that performs operations during the
+// clock cycle too
 pub trait Clocked {
-    fn clock(&mut self);
+    fn clock_start(&mut self);  // sim the front/rising edge of the clock cycle
+    fn clock_end(&mut self);    // sim the end/falling edge of the clock cycle
 }
 
 pub trait WORD {
