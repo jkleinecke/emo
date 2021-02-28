@@ -3,19 +3,6 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub enum BusControlStatus {
-    Read,
-    Write,
-}
-
-pub trait BusInterface {
-    fn get_control_status(&self) -> BusControlStatus;
-    fn get_address(&self) -> u16;
-    fn bus_data(&self) -> u8;
-    fn set_bus_data(&mut self, v:u8);
-}
-
 pub struct Bus {
     pub cpu_ram: [u8;0xFFFF],
 }
@@ -24,24 +11,6 @@ impl Bus {
     pub fn new() -> Self {
         Bus {
             cpu_ram: [0;0xFFFF]
-        }
-    }
-
-    pub fn bus_clock(&mut self, interface:&mut impl BusInterface)
-    {
-        match interface.get_control_status() {
-            BusControlStatus::Read => {
-                // Read from the specified address and set the data
-                let addr = interface.get_address();
-                let data = self.load(addr);
-                interface.set_bus_data(data);
-            }
-            BusControlStatus::Write => {
-                // Write the specified data to the specified address
-                let addr = interface.get_address();
-                let data = interface.bus_data();
-                self.store(addr, data);
-            }
         }
     }
 

@@ -3,18 +3,6 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-pub trait MemoryBus {
-    fn load(&mut self, ptr: u16) -> u8;
-    fn store(&mut self, ptr: u16, value: u8);
-}
-
-// Useful for integration with a memory address bus that performs operations during the
-// clock cycle too
-pub trait Clocked {
-    fn clock_start(&mut self);  // sim the front/rising edge of the clock cycle
-    fn clock_end(&mut self);    // sim the end/falling edge of the clock cycle
-}
-
 pub trait WORD {
     fn hi(&self) -> u8;
     fn lo(&self) -> u8;
