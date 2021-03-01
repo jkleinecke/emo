@@ -13,7 +13,7 @@ pub trait WORD {
 
 impl WORD for u16 {
     fn hi(&self) -> u8 {
-        ((self << 8) & 0xFF) as u8
+        ((self >> 8) & 0xFF) as u8
     }
     fn lo(&self) -> u8 {
         (self & 0xFF) as u8

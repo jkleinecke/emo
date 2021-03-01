@@ -7,9 +7,10 @@ use crate::cpu6502::{Cpu6502,PC_START};
 use crate::bus::{Bus};
 
 const SYSMEMSIZE: usize = 0xFFFF;
-const PROGRAM_START: u16 = 0x8000;
+pub const PROGRAM_START: u16 = 0x8000;
 
 pub struct Nes {
+    pub sys_clocks:u64,
     pub cpu:Cpu6502,
 }
 
@@ -22,6 +23,7 @@ impl Nes
     pub fn new() -> Self 
     {
         Nes {
+            sys_clocks: 0,
             cpu: Cpu6502::new(Box::new(Bus::new())),
         }
     }
@@ -31,10 +33,33 @@ impl Nes
         self.cpu.reset();
     }
 
+    pub fn run(&mut self)
+    {
+        loop
+        {
+            self.step_instruction();
+        }
+    }
+
+    pub fn step_instruction(&mut self)
+    {
+        loop 
+        {
+            self.clock();
+
+            if self.cpu.ir_cycles == 0
+            {
+                break;
+            }
+        }
+    }
+
     pub fn clock(&mut self)
     {
         // CPU clock also gets a data bus clock
         self.cpu.clock();
+
+        self.sys_clocks += 1;
     }
 
     // TODO: this will eventually become load_cartridge

@@ -105,8 +105,7 @@ impl Clocked for Cpu6502
 
         // Decode the IR
         let (operation, addr_mode, c1, c2) = OPCODE_TABLE[self.ir as usize];
-        self.ir_cycles = c1;
-
+        self.ir_cycles = c1 - 1 ;   // minus 1 for "this" cycle
 
         // Execute the IR operation
         self.execute_opcode(operation, addr_mode);
@@ -231,54 +230,272 @@ impl Cpu6502 {
         // then the oops cycle could be triggered by the overflow flag..
 
         match mode {
-            AddressingMode::Immediate => self.pc,
-            AddressingMode::ZeroPage => self.mem_fetch(self.pc) as u16,
-            AddressingMode::ZeroPageX => {
-                let pos = self.mem_fetch(self.pc);
-                let addr = pos.wrapping_add(self.x) as u16;
+            AddressingMode::Immediate => {
+                let addr = self.pc;
+                self.inc_pc();
                 addr
+            }
+            AddressingMode::ZeroPage => {
+                self.a = self.mem_fetch(self.pc);
+                self.inc_pc();
+                self.a as u16
+            }
+            AddressingMode::ZeroPageX => {
+                self.a = self.mem_fetch(self.pc);
+                self.inc_pc();
+                self.alu_add(self.x);
+                self.a as u16
             }
             AddressingMode::ZeroPageY => {
-                let pos = self.mem_fetch(self.pc);
-                let addr = pos.wrapping_add(self.y) as u16;
-                addr
-            }
-            AddressingMode::Absolute => self.mem_fetch16(self.pc),
-            AddressingMode::AbsoluteX => {
-                let base = self.mem_fetch16(self.pc);
+                self.a = self.mem_fetch(self.pc);
                 self.inc_pc();
-                let addr = base.wrapping_add(self.x as u16);
-                addr
+                self.alu_add(self.y);
+                self.a as u16
+            }
+            AddressingMode::Absolute => {
+                let lo = self.mem_fetch(self.pc);
+                self.inc_pc();
+                self.a = self.mem_fetch(self.pc);     // just making sure the registers are used properly here
+                self.inc_pc();
+                u16::make(self.a, lo)
+            }
+            AddressingMode::AbsoluteX => {
+                self.a = self.mem_fetch(self.pc);
+                self.inc_pc();
+                self.alu_add(self.x);
+                let lo = self.a;
+
+                self.a = self.mem_fetch(self.pc);
+                self.inc_pc();
+
+                if self.status.contains(ProcessorStatus::Carry)
+                {
+                    // this is the oops cycle work here.. the lo-byte
+                    // addition overflowed which means we need to spend
+                    // an extra cycle adding the carry to the hi-byte
+                    self.alu_add(1);        // adding 0 works because all add operations already include the carry
+                    self.ir_cycles += 1;    // add the oops cycle into it
+                }
+
+                u16::make(self.a, lo)
             }
             AddressingMode::AbsoluteY => {
-                let base = self.mem_fetch16(self.pc);
+                self.a = self.mem_fetch(self.pc);
                 self.inc_pc();
-                let addr = base.wrapping_add(self.y as u16);
-                addr
+                self.alu_add(self.y);
+                let lo = self.a;
+
+                self.a = self.mem_fetch(self.pc);
+                self.inc_pc();
+                
+                if self.status.contains(ProcessorStatus::Carry)
+                {
+                    // this is the oops cycle work here.. the lo-byte
+                    // addition overflowed which means we need to spend
+                    // an extra cycle adding the carry to the hi-byte
+                    self.alu_add(1);        // add the carry
+                    self.ir_cycles += 1;    // add the oops cycle into it
+                }
+
+                u16::make(self.a, lo)
             }
-            AddressingMode::Indirect => {
-                let base = self.mem_fetch(self.pc);
-                let lo = self.mem_fetch(base as u16);
-                let hi = self.mem_fetch(base.wrapping_add(1) as u16);
-                u16::make(hi,lo)
-            },
+            // AddressingMode::Indirect => {
+            //     let base = self.mem_fetch(self.pc);
+            //     let lo = self.mem_fetch(base as u16);
+            //     let hi = self.mem_fetch(base.wrapping_add(1) as u16);
+            //     u16::make(hi,lo)
+            // },
             AddressingMode::IndirectX => {
-                let base = self.mem_fetch(self.pc);
-                let ptr = base.wrapping_add(self.x);
-                let lo = self.mem_fetch(ptr as u16);
-                let hi = self.mem_fetch(ptr.wrapping_add(1) as u16);
+                self.a = self.mem_fetch(self.pc);
+                self.inc_pc();
+                self.alu_add(self.x);
+
+                let lo = self.mem_fetch(self.a as u16);
+                self.alu_add(1);
+                let hi = self.mem_fetch(self.a as u16);
                 u16::make(hi, lo)
             }
             AddressingMode::IndirectY => {
-                let base = self.mem_fetch(self.pc);
-                let lo = self.mem_fetch(base as u16);
-                let hi = self.mem_fetch(base.wrapping_add(1) as u16);
-                let ptr_base = u16::make(hi,lo);
-                let ptr = ptr_base.wrapping_add(self.y as u16);
-                ptr
+                self.a = self.mem_fetch(self.pc);
+                self.inc_pc();
+
+                let lo = self.mem_fetch(self.a as u16);
+                self.alu_add(1);
+                let hi = self.mem_fetch(self.a as u16);
+
+                self.a = lo;
+                self.alu_add(self.y);
+                let ptr_lo = self.a;
+                self.a = hi;
+
+                if self.status.contains(ProcessorStatus::Carry)
+                {
+                    // this is the oops cycle work here.. the lo-byte
+                    // addition overflowed which means we need to spend
+                    // an extra cycle adding the carry to the hi-byte
+                    self.alu_add(1);        // add the carry
+                    self.ir_cycles += 1;    // add the oops cycle into it
+                }
+
+                u16::make(self.a,ptr_lo)
             },
-            _ => todo!("Not implemented address modes!"),
+            _ => panic!("address mode {:?} is not supported", mode),
         }
+    }
+
+    fn fetch_jmp_address(&mut self) -> u16
+    {
+        self.a = self.mem_fetch(self.pc);
+        self.inc_pc();
+
+        self.alu_add(self.pc.lo());
+
+        u16::make(self.pc.hi(), self.a)
+    }
+
+    /*************************
+     * ALU operations
+     *************************/
+
+    fn alu_add(&mut self, v:u8)
+    {
+        // a rather ambitious attempt to generalize the alu operations with
+        // the status flag updates
+        //
+        // Important to note that the result does not actually wrap around.
+        //  A second add operation is required to account for the carry bit
+        //
+        // CPU status flags are then set to indicate
+        //  zero, 
+        //  negative, 
+        //  another carry was generated
+        //  signed overflow occurred if the values are interpreted as signed
+
+        let result = self.a as u16 + v as u16;
+        let signed_overflow = !(self.a ^ v) & (self.a ^ result.lo());
+
+        self.a = result.lo();
+
+        self.status.set(ProcessorStatus::Zero, self.a == 0);
+        self.status.set(ProcessorStatus::Negative, test_bit(self.a,7));
+        self.status.set(ProcessorStatus::Carry, result.hi() > 0);
+        self.status.set(ProcessorStatus::Overflow, test_bit(signed_overflow, 7));
+    }
+
+    fn alu_sub(&mut self, v:u8)
+    {
+        // further ambitious bullshit from me...
+
+        let result = self.a.wrapping_sub(v);
+        let signed_overflow = !(self.a ^ v) & (self.a ^ result);
+
+        self.status.set(ProcessorStatus::Overflow, false);
+        self.status.set(ProcessorStatus::Carry, result <= self.a);
+        self.status.set(ProcessorStatus::Zero, result == 0);
+        self.status.set(ProcessorStatus::Negative, test_bit(signed_overflow,7));
+
+        self.a = result;
+    }
+
+    fn alu_and(&mut self, v:u8)
+    {
+        self.a &= v;
+
+        self.alu_status();
+    }
+
+    fn alu_xor(&mut self, v:u8)
+    {
+        self.a ^= v;
+
+        self.alu_status();
+    }
+
+    fn alu_or(&mut self, v:u8)
+    {
+        self.a |= v;
+
+        self.alu_status();
+    }
+
+    fn alu_lsr(&mut self)
+    {
+        self.status.set(ProcessorStatus::Overflow, false);
+        self.status.set(ProcessorStatus::Carry, test_bit(self.a, 0));
+
+        self.a >>= 1;
+        
+        self.status.set(ProcessorStatus::Zero, self.a == 0);
+        self.status.set(ProcessorStatus::Negative, test_bit(self.a,7));
+    }
+
+    // fn alu_asr(&mut self)
+    // {
+    //     self.status.set(ProcessorStatus::Overflow, false);
+    //     self.status.set(ProcessorStatus::Carry, test_bit(self.a, 0));
+
+    //     self.a = (self.a >> 1) | (self.a & 0x80);   // preserve the high-bit negative sign
+        
+    //     self.status.set(ProcessorStatus::Zero, self.a == 0);
+    //     self.status.set(ProcessorStatus::Negative, test_bit(self.a,7));
+    // }
+
+    fn alu_asl(&mut self)
+    {
+        self.status.set(ProcessorStatus::Overflow, false);
+        self.status.set(ProcessorStatus::Carry, test_bit(self.a, 7));
+
+        self.a <<= 1;
+        
+        self.status.set(ProcessorStatus::Zero, self.a == 0);
+        self.status.set(ProcessorStatus::Negative, test_bit(self.a,7));
+    }
+
+    fn alu_rol(&mut self)
+    {
+        let carry = self.status.contains(ProcessorStatus::Carry) ;
+
+        self.status.set(ProcessorStatus::Overflow, false);
+        self.status.set(ProcessorStatus::Carry, test_bit(self.a, 7));
+
+        self.a <<= 1;
+        if carry {
+            self.a = self.a.wrapping_add(1);
+        }
+        
+        self.status.set(ProcessorStatus::Zero, self.a == 0);
+        self.status.set(ProcessorStatus::Negative, test_bit(self.a,7));
+    }
+
+    fn alu_ror(&mut self)
+    {
+        let carry = self.status.contains(ProcessorStatus::Carry) ;
+
+        self.status.set(ProcessorStatus::Overflow, false);
+        self.status.set(ProcessorStatus::Carry, test_bit(self.a, 0));
+
+        self.a >>= 1;
+        if carry {
+            self.a += self.a.wrapping_add(0x80);
+        }
+        
+        self.status.set(ProcessorStatus::Zero, self.a == 0);
+        self.status.set(ProcessorStatus::Negative, test_bit(self.a,7));
+    }
+
+    fn alu_status(&mut self)
+    {
+        self.status.set(ProcessorStatus::Overflow, false);
+        self.status.set(ProcessorStatus::Carry, false);
+        self.status.set(ProcessorStatus::Zero, self.a == 0);
+        self.status.set(ProcessorStatus::Negative, test_bit(self.a,7));
+    }
+
+    fn alu_compare(&mut self, v1: u8, v2: u8)
+    {
+        self.status.set(ProcessorStatus::Negative, test_bit(v1 - v2, 7));
+        self.status.set(ProcessorStatus::Zero, v1 == v2);
+        self.status.set(ProcessorStatus::Carry, v1 >= v2);
     }
 
     /*************************
@@ -288,11 +505,161 @@ impl Cpu6502 {
     fn execute_opcode(&mut self, opcode: Operation, addr_mode: AddressingMode)
     {
         match opcode {
+            Operation::ADC => self.op_adc(addr_mode),
+            Operation::AND => self.op_and(addr_mode),
+            Operation::ASL => self.op_asl(addr_mode),
+            Operation::BCC => self.op_bcc(addr_mode),
+            Operation::BCS => self.op_bcs(addr_mode),
+            Operation::BEQ => self.op_beq(addr_mode),
+            Operation::BIT => self.op_bit(addr_mode),
+            Operation::BMI => self.op_bmi(addr_mode),
+            Operation::BNE => self.op_bne(addr_mode),
+            Operation::BPL => self.op_bpl(addr_mode),
             Operation::BRK => self.op_brk(addr_mode),
-            Operation::TAX => self.op_tax(addr_mode),
+            Operation::BVC => self.op_bvc(addr_mode),
+            Operation::BVS => self.op_bvs(addr_mode),
+            Operation::CLC => self.op_clc(addr_mode),
+            Operation::CLD => self.op_cld(addr_mode),
+            Operation::CLI => self.op_cli(addr_mode),
+            Operation::CLV => self.op_clv(addr_mode),
+            Operation::CMP => self.op_cmp(addr_mode),
+            Operation::CPX => self.op_cpx(addr_mode),
+            Operation::CPY => self.op_cpy(addr_mode),
+            Operation::DEC => self.op_dec(addr_mode),
+            Operation::DEX => self.op_dex(addr_mode),
+            Operation::DEY => self.op_dey(addr_mode),
+            Operation::EOR => self.op_eor(addr_mode),
+            Operation::INC => self.op_inc(addr_mode),
+            Operation::INX => self.op_inx(addr_mode),
+            Operation::INY => self.op_iny(addr_mode),
+            Operation::JMP => self.op_jmp(addr_mode),
+            Operation::JSR => self.op_jsr(addr_mode),
             Operation::LDA => self.op_lda(addr_mode),
+            Operation::LDX => self.op_ldx(addr_mode),
+            Operation::LDY => self.op_ldy(addr_mode),
+            Operation::LSR => self.op_lsr(addr_mode),
+            Operation::NOP => self.op_nop(addr_mode),
+            Operation::ORA => self.op_ora(addr_mode),
+            Operation::PHA => self.op_pha(addr_mode),
+            Operation::PHP => self.op_php(addr_mode),
+            Operation::PLA => self.op_pla(addr_mode),
+            Operation::PLP => self.op_plp(addr_mode),
+            Operation::ROL => self.op_rol(addr_mode),
+            Operation::ROR => self.op_ror(addr_mode),
+            Operation::RTI => self.op_rti(addr_mode),
+            Operation::RTS => self.op_rts(addr_mode),
+            Operation::SBC => self.op_sbc(addr_mode),
+            Operation::SEC => self.op_sec(addr_mode),
+            Operation::SED => self.op_sed(addr_mode),
+            Operation::SEI => self.op_sei(addr_mode),
+            Operation::STA => self.op_sta(addr_mode),
+            Operation::STX => self.op_stx(addr_mode),
+            Operation::STY => self.op_sty(addr_mode),
+            Operation::TAX => self.op_tax(addr_mode),
+            Operation::TAY => self.op_tay(addr_mode),
+            Operation::TSX => self.op_tsx(addr_mode),
+            Operation::TXA => self.op_txa(addr_mode),
+            Operation::TXS => self.op_txs(addr_mode),
+            Operation::TYA => self.op_tya(addr_mode),
+            //--TODO: "Extra" opcodes
             _ => todo!("Not implemented instruction")
         };
+    }
+
+    fn op_adc(&mut self, addr_mode: AddressingMode)
+    {
+        let addr = self.fetch_operand_address(addr_mode);
+        let value = self.mem_fetch(addr).wrapping_add(ternary(self.status.contains(ProcessorStatus::Carry), 1u8, 0u8));
+        
+        self.alu_add(value);
+    }
+
+    fn op_and(&mut self, addr_mode: AddressingMode)
+    {
+        let addr = self.fetch_operand_address(addr_mode);
+        let value = self.mem_fetch(addr);
+
+        self.alu_and(value);
+    }
+
+    fn op_asl(&mut self, addr_mode: AddressingMode)
+    {
+        let addr = self.fetch_operand_address(addr_mode);
+        let value = self.mem_fetch(addr);
+
+        self.a = value;
+        self.alu_asl();
+
+        // now write the value back out
+        self.mem_store(addr, self.a);
+    }
+
+    fn op_bcc(&mut self, addr_mode: AddressingMode)
+    {
+        let jmp_addr = self.fetch_jmp_address();
+        
+        if self.status.contains(ProcessorStatus::Carry) == false
+        {
+            self.pc = jmp_addr;
+        }
+    }
+
+    fn op_bcs(&mut self, addr_mode: AddressingMode)
+    {
+        let jmp_addr = self.fetch_jmp_address();
+        
+        if self.status.contains(ProcessorStatus::Carry)
+        {
+            self.pc = jmp_addr;
+        }
+    }
+
+    fn op_beq(&mut self, addr_mode: AddressingMode)
+    {
+        let jmp_addr = self.fetch_jmp_address();
+        
+        if self.status.contains(ProcessorStatus::Zero)
+        {
+            self.pc = jmp_addr;
+        }
+    }
+
+    fn op_bit(&mut self, addr_mode: AddressingMode)
+    {
+        let addr = self.fetch_operand_address(addr_mode);
+        let value = self.mem_fetch(addr);
+
+        self.status.set(ProcessorStatus::Zero, (self.a & value) == 0);
+    }
+
+    fn op_bmi(&mut self, addr_mode: AddressingMode)
+    {
+        let jmp_addr = self.fetch_jmp_address();
+
+        if self.status.contains(ProcessorStatus::Negative)
+        {
+            self.pc = jmp_addr;
+        }
+    }
+
+    fn op_bne(&mut self, addr_mode: AddressingMode)
+    {
+        let jmp_addr = self.fetch_jmp_address();
+        
+        if self.status.contains(ProcessorStatus::Zero) == false
+        {
+            self.pc = jmp_addr;
+        }
+    }
+
+    fn op_bpl(&mut self, addr_mode: AddressingMode)
+    {
+        let jmp_addr = self.fetch_jmp_address();
+
+        if self.status.contains(ProcessorStatus::Negative) == false
+        {
+            self.pc = jmp_addr;
+        }
     }
 
     fn op_brk(&mut self, addr_mode: AddressingMode)
@@ -302,7 +669,7 @@ impl Cpu6502 {
         /* push pc lo on stack */
         self.stack_push(self.pc.lo());
         /* push status on stack, */
-        let status = self.status.bits | ProcessorStatus::Unused.bits;
+        let status = self.status.bits | ProcessorStatus::Unused.bits | ProcessorStatus::Break.bits;
             
             // if self.nmi || self.irq {
             //     status |= ProcessorStatus::Interrupt.bits;
@@ -322,21 +689,397 @@ impl Cpu6502 {
         self.pc = self.mem_fetch16(PC_START);
     }
 
-    fn op_tax(&mut self, addr_mode: AddressingMode)
+    fn op_bvc(&mut self, addr_mode: AddressingMode)
     {
-        self.inc_pc();  // all instructions must move the pc forward 1, no matter if they use it
+        let jmp_addr = self.fetch_jmp_address();
+        
+        if self.status.contains(ProcessorStatus::Overflow) == false
+        {
+            self.pc = jmp_addr;
+        }
+    }
 
-        self.x = self.a ;
-        self.update_status(self.x) ;
+    fn op_bvs(&mut self, addr_mode: AddressingMode)
+    {
+        let jmp_addr = self.fetch_jmp_address();
+        
+        if self.status.contains(ProcessorStatus::Overflow)
+        {
+            self.pc = jmp_addr;
+        }
+    }
+
+    fn op_clc(&mut self, addr_mode: AddressingMode)
+    {
+        self.status.set(ProcessorStatus::Carry, false);
+    }
+
+    fn op_cld(&mut self, addr_mode: AddressingMode)
+    {
+        self.status.set(ProcessorStatus::Decimal, false);
+    }
+
+    fn op_cli(&mut self, addr_mode: AddressingMode)
+    {
+        self.status.set(ProcessorStatus::Interrupt, false);
+    }
+
+    fn op_clv(&mut self, addr_mode: AddressingMode)
+    {
+        self.status.set(ProcessorStatus::Overflow, false);
+    }
+
+    fn op_cmp(&mut self, addr_mode: AddressingMode)
+    {
+        let addr = self.fetch_operand_address(addr_mode);
+        let value = self.mem_fetch(addr);
+
+        self.alu_compare(self.a, value);
+    }
+
+    fn op_cpx(&mut self, addr_mode: AddressingMode)
+    {
+        let addr = self.fetch_operand_address(addr_mode);
+        let value = self.mem_fetch(addr);
+
+        self.alu_compare(self.x, value);
+    }
+
+    fn op_cpy(&mut self, addr_mode: AddressingMode)
+    {
+        let addr = self.fetch_operand_address(addr_mode);
+        let value = self.mem_fetch(addr);
+
+        self.alu_compare(self.y, value);
+    }
+
+    fn op_dec(&mut self, addr_mode: AddressingMode)
+    {
+        let addr = self.fetch_operand_address(addr_mode);
+        let value = self.mem_fetch(addr);
+
+        self.a = value;
+        self.alu_sub(1);
+
+        self.mem_store(addr, self.a);
+    }
+
+    fn op_dex(&mut self, addr_mode: AddressingMode)
+    {
+        self.a = self.x;
+        self.alu_sub(1);
+        self.x = self.a;        
+    }
+
+    fn op_dey(&mut self, addr_mode: AddressingMode)
+    {
+        self.a = self.y;
+        self.alu_sub(1);
+        self.y = self.a;        
+    }
+
+    fn op_eor(&mut self, addr_mode: AddressingMode)
+    {
+        let addr = self.fetch_operand_address(addr_mode);
+        let value = self.mem_fetch(addr);
+
+        self.alu_xor(value);
+    }
+
+    fn op_inc(&mut self, addr_mode: AddressingMode)
+    {
+        let addr = self.fetch_operand_address(addr_mode);
+        let value = self.mem_fetch(addr);
+
+        self.a = value;
+        self.alu_add(1);
+
+        self.mem_store(addr, self.a);
+    }
+
+    fn op_inx(&mut self, addr_mode: AddressingMode)
+    {
+        self.a = self.x;
+        self.alu_add(1);
+        self.x = self.a;
+    }
+
+    fn op_iny(&mut self, addr_mode: AddressingMode)
+    {
+        self.a = self.x;
+        self.alu_add(1);
+        self.x = self.a;
+    }
+
+    fn op_jmp(&mut self, addr_mode: AddressingMode)
+    {
+        let addr = self.fetch_operand_address(addr_mode);
+
+        // pray that my addressing code handles the "6502" 0xFF rollover bug
+        // properly...
+        self.pc = addr;
+    }
+
+    fn op_jsr(&mut self, addr_mode: AddressingMode)
+    {
+        let addr = self.fetch_operand_address(addr_mode);
+        self.pc = self.pc.wrapping_sub(1);
+        self.stack_push(self.pc.hi());
+        self.stack_push(self.pc.lo());
+
+        self.pc = addr;
     }
 
     fn op_lda(&mut self, addr_mode: AddressingMode)
     {
         let addr = self.fetch_operand_address(addr_mode);
         self.a = self.mem_fetch(addr);
-        self.inc_pc();
 
-        self.update_status(self.a);
+        self.alu_status();
     }
+
+    fn op_ldx(&mut self, addr_mode: AddressingMode)
+    {
+        let addr = self.fetch_operand_address(addr_mode);
+        self.a = self.mem_fetch(addr);
+        self.x = self.a;
+
+        self.alu_status();
+    }
+
+    fn op_ldy(&mut self, addr_mode: AddressingMode)
+    {
+        let addr = self.fetch_operand_address(addr_mode);
+        self.a = self.mem_fetch(addr);
+        self.y = self.a;
+
+        self.alu_status();
+    }
+
+    fn op_lsr(&mut self, addr_mode: AddressingMode)
+    {
+        if addr_mode == AddressingMode::Accumulator
+        {
+            self.alu_lsr();
+        }
+        else
+        {
+            let addr = self.fetch_operand_address(addr_mode);
+            let value = self.mem_fetch(addr);
+
+            self.a = value;
+            self.alu_lsr();
+
+            self.mem_store(addr, self.a);
+        }
+    }
+
+    fn op_nop(&mut self, addr_mode: AddressingMode)
+    {
+        // No-Op
+        // aka do nothing at all but sit and spin
+    }
+
+    fn op_ora(&mut self, addr_mode: AddressingMode)
+    {
+        let addr = self.fetch_operand_address(addr_mode);
+        let value = self.mem_fetch(addr);
+
+        self.alu_or(value);
+    }
+
+    fn op_pha(&mut self, addr_mode: AddressingMode)
+    {
+        self.stack_push(self.a) ;
+    }
+
+    fn op_php(&mut self, addr_mode: AddressingMode)
+    {
+        let value = self.status.bits | ProcessorStatus::Break.bits;
+
+        self.stack_push(value);
+    }
+
+    fn op_pla(&mut self, addr_mode: AddressingMode)
+    {
+        self.a = self.stack_pop();
+    }
+
+    fn op_plp(&mut self, addr_mode: AddressingMode)
+    {
+        self.status.bits = (self.status.bits & 0x30) | (self.stack_pop() & 0xCF);
+    }
+
+    fn op_rol(&mut self, addr_mode: AddressingMode)
+    {
+        if addr_mode == AddressingMode::Accumulator
+        {
+            self.alu_rol();
+        }
+        else 
+        {
+            let addr = self.fetch_operand_address(addr_mode);
+            let value = self.mem_fetch(addr);
+
+            self.a = value;
+            self.alu_rol();
+
+            self.mem_store(addr, self.a) ;
+        }
+    }
+
+    fn op_ror(&mut self, addr_mode: AddressingMode)
+    {
+        if addr_mode == AddressingMode::Accumulator
+        {
+            self.alu_ror();
+        }
+        else
+        {
+            let addr = self.fetch_operand_address(addr_mode);
+            let value = self.mem_fetch(addr);
+
+            self.a = value;
+            self.alu_ror();
+
+            self.mem_store(addr, self.a) ;
+        }
+    }
+
+    fn op_rti(&mut self, addr_mode: AddressingMode)
+    {
+        self.status.bits = (self.status.bits & 0x30) | (self.stack_pop() & 0xCF);
+        let lo = self.stack_pop();
+        let hi = self.stack_pop();
+
+        self.pc = u16::make(hi, lo);
+    }
+
+    fn op_rts(&mut self, addr_mode: AddressingMode)
+    {
+        let lo = self.stack_pop();
+        let hi = self.stack_pop();
+
+        self.pc = u16::make(hi, lo).wrapping_add(1);
+    }
+
+    fn op_sbc(&mut self, addr_mode: AddressingMode)
+    {
+        let addr = self.fetch_operand_address(addr_mode);
+        let value = self.mem_fetch(addr).wrapping_sub(ternary(self.status.contains(ProcessorStatus::Carry), 0u8, 1u8));
+
+        self.alu_sub(value);
+    }
+
+    fn op_sec(&mut self, addr_mode: AddressingMode)
+    {
+        self.status.set(ProcessorStatus::Carry, true);
+    }
+
+    fn op_sed(&mut self, addr_mode: AddressingMode)
+    {
+        self.status.set(ProcessorStatus::Decimal, true);
+    }
+
+    fn op_sei(&mut self, addr_mode: AddressingMode)
+    {
+        self.status.set(ProcessorStatus::Interrupt, true);
+    }
+
+    fn op_sta(&mut self, addr_mode: AddressingMode)
+    {
+        let addr = self.fetch_operand_address(addr_mode);
+        self.mem_store(addr, self.a);
+    }
+    
+    fn op_stx(&mut self, addr_mode: AddressingMode)
+    {
+        let addr = self.fetch_operand_address(addr_mode);
+        self.mem_store(addr, self.x);
+    }
+
+    fn op_sty(&mut self, addr_mode: AddressingMode)
+    {
+        let addr = self.fetch_operand_address(addr_mode);
+        self.mem_store(addr, self.y);
+    }
+    
+    fn op_tax(&mut self, addr_mode: AddressingMode)
+    {
+        self.x = self.a;
+    }
+
+    fn op_tay(&mut self, addr_mode: AddressingMode)
+    {
+        self.y = self.a;
+    }
+
+    fn op_tsx(&mut self, addr_mode: AddressingMode)
+    {
+        self.x = self.sp;
+
+        self.status.set(ProcessorStatus::Negative, test_bit(self.x, 7));
+        self.status.set(ProcessorStatus::Zero, self.x == 0);
+    }
+
+    fn op_txa(&mut self, addr_mode: AddressingMode)
+    {
+        self.a = self.x;
+        self.alu_status();
+    }
+
+    fn op_txs(&mut self, addr_mode: AddressingMode)
+    {
+        self.sp = self.x;
+    }
+
+    fn op_tya(&mut self, addr_mode: AddressingMode)
+    {
+        self.a = self.y;
+        self.alu_status();
+    }
+
+    //--TODO: "Extra" opcodes
 }
 
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn cpu_alu_add() 
+    {
+        let mut cpu = Cpu6502::new(Box::new(Bus::new()));   
+        
+        cpu.a = 13;
+        cpu.alu_add(211);
+        
+        assert_eq!(cpu.a, 224);
+        assert_eq!(cpu.status.contains(ProcessorStatus::Carry), false);
+    }
+    
+    #[test]
+    fn cpu_alu_add_carry() 
+    {
+        let mut cpu = Cpu6502::new(Box::new(Bus::new()));   
+        
+        cpu.a = 254;
+        cpu.alu_add(6);
+        
+        assert_eq!(cpu.a, 4);
+        assert_eq!(cpu.status.contains(ProcessorStatus::Carry), true);
+    }
+    
+    #[test]
+    fn cpu_alu_add_carry_clear() 
+    {
+        let mut cpu = Cpu6502::new(Box::new(Bus::new()));   
+        
+        cpu.a = 254;
+        cpu.alu_add(6); // 4 + carry
+        cpu.alu_add(6); 
+        
+        assert_eq!(cpu.a, 10);
+        assert_eq!(cpu.status.contains(ProcessorStatus::Carry), false);
+    }
+}
