@@ -1,6 +1,6 @@
 #![allow(non_upper_case_globals)]
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Operation {
     ADC,AND,ASL,BCC,BCS,BEQ,BIT,BMI,BNE,
     BPL,BRK,BVC,BVS,CLC,CLD,CLI,CLV,CMP,
@@ -10,7 +10,7 @@ pub enum Operation {
     SED,SEI,STA,STX,STY,TAX,TAY,TSX,TXA,
     TXS,TYA,
     // "Extra" opcodes
-    KIL,ISC,DCP,AXS,LAS,LAX,AHX,SAX,XAA,
+    KIL,ISC,DCP,AXS,LAS,LAX,SHA,SAX,XAA,
     SHX,RRA,TAS,SHY,ARR,SRE,ALR,RLA,ANC,
     SLO,
 }
@@ -67,7 +67,7 @@ pub const OPCODE_TABLE: [(Operation, AddressingMode, CycleCount, CycleCount);256
 /* 6x */(RTS,imp,6,0),(ADC,izx,6,0),(KIL,imp,0,0),(RRA,izx,8,0),(NOP,zp, 3,0),(ADC,zp, 3,0),(ROR,zp, 5,0),(RRA,zp, 5,0),(PLA,imp,4,0),(ADC,imm,2,0),(ROR,imp,2,0),(ARR,imm,2,0),(JMP,ind,5,0),(ADC,abs,4,0),(ROR,abs,6,0),(RRA,abs,6,0),
 /* 7x */(BVS,rel,2,1),(ADC,izy,5,1),(KIL,imp,0,0),(RRA,izy,8,0),(NOP,zpx,4,0),(ADC,zpx,4,0),(ROR,zpx,6,0),(RRA,zpx,6,0),(SEI,imp,2,0),(ADC,aby,4,1),(NOP,imp,2,0),(RRA,aby,7,0),(NOP,abx,4,1),(ADC,abx,4,1),(ROR,abx,7,0),(RRA,abx,7,0),
 /* 8x */(NOP,imm,2,0),(STA,izx,6,0),(NOP,imm,2,0),(SAX,izx,6,0),(STY,zp, 3,0),(STA,zp, 3,0),(STX,zp, 3,0),(SAX,zp, 3,0),(DEY,imp,2,0),(NOP,imm,2,0),(TXA,imp,2,0),(XAA,imm,2,1),(STY,abs,4,0),(STA,abs,4,0),(STX,abs,4,0),(SAX,abs,4,0),
-/* 9x */(BCC,rel,2,1),(STA,izy,6,0),(KIL,imp,0,0),(AHX,izy,6,0),(STY,zpx,4,0),(STA,zpx,4,0),(STX,zpy,4,0),(SAX,zpy,4,0),(TYA,imp,2,0),(STA,aby,5,0),(TXS,imp,2,0),(TAS,aby,5,0),(SHY,abx,5,0),(STA,abx,5,0),(SHX,aby,5,0),(AHX,aby,5,0),
+/* 9x */(BCC,rel,2,1),(STA,izy,6,0),(KIL,imp,0,0),(SHA,izy,6,0),(STY,zpx,4,0),(STA,zpx,4,0),(STX,zpy,4,0),(SAX,zpy,4,0),(TYA,imp,2,0),(STA,aby,5,0),(TXS,imp,2,0),(TAS,aby,5,0),(SHY,abx,5,0),(STA,abx,5,0),(SHX,aby,5,0),(SHA,aby,5,0),
 /* Ax */(LDY,imm,2,0),(LDA,izx,6,0),(LDX,imm,2,0),(LAX,izx,6,0),(LDY,zp, 3,0),(LDA,zp, 3,0),(LDX,zp, 3,0),(LAX,zp, 3,0),(TAY,imp,2,0),(LDA,imm,2,0),(TAX,imp,2,0),(LAX,imm,2,0),(LDY,abs,4,0),(LDA,abs,4,0),(LDX,abs,4,0),(LAX,abs,4,0),
 /* Bx */(BCS,rel,2,1),(LDA,izy,5,1),(KIL,imp,0,0),(LAX,izy,5,1),(LDY,zpx,4,0),(LDA,zpx,4,0),(LDX,zpy,4,0),(LAX,zpy,4,0),(CLV,imp,2,0),(LDA,aby,4,1),(TSX,imp,2,0),(LAS,aby,4,1),(LDY,abx,4,1),(LDA,abx,4,1),(LDX,aby,4,1),(LAX,aby,4,1),
 /* Cx */(CPY,imm,2,0),(CMP,izx,6,0),(NOP,imm,2,0),(DCP,izx,8,0),(CPY,zp, 3,0),(CMP,zp, 3,0),(DEC,zp, 5,0),(DCP,zp, 5,0),(INY,imp,2,0),(CMP,imm,2,0),(DEX,imp,2,0),(AXS,imm,2,0),(CPY,abs,4,0),(CMP,abs,4,0),(DEC,abs,6,0),(DCP,abs,6,0),

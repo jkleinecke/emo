@@ -7,7 +7,7 @@ use crate::cpu6502::{Cpu6502,PC_START};
 use crate::bus::{Bus};
 
 const SYSMEMSIZE: usize = 0xFFFF;
-pub const PROGRAM_START: u16 = 0x8000;
+pub const PROGRAM_START: u16 = 0x600;
 
 pub struct Nes {
     pub sys_clocks:u64,
@@ -38,6 +38,11 @@ impl Nes
         loop
         {
             self.step_instruction();
+
+            if self.cpu.did_halt() 
+            {
+                break;
+            }
         }
     }
 
@@ -57,7 +62,10 @@ impl Nes
     pub fn clock(&mut self)
     {
         // CPU clock also gets a data bus clock
-        self.cpu.clock();
+        if self.cpu.did_halt() == false 
+        {
+            self.cpu.clock();
+        }
 
         self.sys_clocks += 1;
     }
