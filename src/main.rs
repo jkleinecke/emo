@@ -99,7 +99,7 @@ fn main() {
         // directly as part of the bus, but this will work fine..
         handle_user_input(&mut nes.cpu.bus, &mut event_pump);
 
-        //nes.cpu.bus.store(0x00FE, rng.gen_range(1,16) as u8);
+        nes.cpu.bus.store(0x00FE, rng.gen_range(1,16) as u8);
 
         nes.step_instruction();
 
