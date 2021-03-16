@@ -37,19 +37,33 @@ const STACK_START: u8 = 0xFF;
 
 const OP_BRK: u8 = 0x00;
 
-const BIT_C: u8       = 0b00000001;
-const BIT_Z: u8        = 0b00000010;
-const BIT_I: u8   = 0b00000100;
-const BIT_D: u8     = 0b00001000;         // Not really used
+const BIT_C: u8   = 0;
+const BIT_Z: u8   = 1;
+const BIT_I: u8   = 2;
+const BIT_D: u8   = 3;         // Not really used
 
-const BIT_B: u8       = 0b00010000;
-const BIT_U: u8      = 0b00100000;
-const BIT_V: u8    = 0b01000000;
-const BIT_N: u8    = 0b10000000;
+const BIT_B: u8   = 4;
+const BIT_U: u8   = 5;
+const BIT_V: u8   = 6;
+const BIT_N: u8   = 7;
 
 #[derive(Default)]
 pub struct Status {
     pub flags: u8,
+}
+
+impl fmt::Debug for Status {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let n = ternary!(self.flags.on(BIT_N), 'N', 'n');
+        let v = ternary!(self.flags.on(BIT_V), 'V', 'v');
+        let b = ternary!(self.flags.on(BIT_B), 'B', 'b');
+        let d = ternary!(self.flags.on(BIT_D), 'D', 'd');
+        let i = ternary!(self.flags.on(BIT_I), 'I', 'i');
+        let z = ternary!(self.flags.on(BIT_Z), 'Z', 'z');
+        let c = ternary!(self.flags.on(BIT_C), 'C', 'c');
+
+        write!(f, "{}{}-{}{}{}{}{}", n,v,b,d,i,z,c)
+    }
 }
 
 impl fmt::Display for Status {
@@ -100,8 +114,7 @@ pub struct Cpu6502 {
     // internal registers
     pub ir_cycles: u8,
     pub ir: u8,                         // active instruction register
-    ad: u16,                        // ADL / ADH internal register
-
+    
     halted: bool,                   // fake register to show that we should be done
 
     // bus module
@@ -153,7 +166,6 @@ impl Cpu6502 {
             
             ir_cycles: 0,
             ir:0,
-            ad: 0,
 
             halted: false,
 
@@ -266,128 +278,130 @@ impl Cpu6502 {
                 addr
             }
             AddressingMode::ZeroPage => {
-                self.a = self.mem_fetch(self.pc);
+                let lo = self.mem_fetch(self.pc);
                 self.inc_pc();
-                self.a as u16
+                lo as u16
             }
             AddressingMode::ZeroPageX => {
-                self.a = self.mem_fetch(self.pc);
+                let lo = self.mem_fetch(self.pc);
                 self.inc_pc();
-                self.alu_add(self.x);
-                self.a as u16
+                lo.wrapping_add(self.x) as u16
             }
             AddressingMode::ZeroPageY => {
-                self.a = self.mem_fetch(self.pc);
+                let lo = self.mem_fetch(self.pc);
                 self.inc_pc();
-                self.alu_add(self.y);
-                self.a as u16
+                lo.wrapping_add(self.y) as u16
             }
             AddressingMode::Absolute => {
                 let lo = self.mem_fetch(self.pc);
                 self.inc_pc();
-                self.a = self.mem_fetch(self.pc);     // just making sure the registers are used properly here
+                let hi = self.mem_fetch(self.pc);     // just making sure the registers are used properly here
                 self.inc_pc();
-                u16::make(self.a, lo)
+                u16::make(hi, lo)
             }
             AddressingMode::AbsoluteX => {
-                self.a = self.mem_fetch(self.pc);
+                let ptr = self.mem_fetch(self.pc);
                 self.inc_pc();
-                self.alu_add(self.x);
-                let lo = self.a;
-
-                self.a = self.mem_fetch(self.pc);
+                let base = ptr as u16 + self.x as u16;
+                let carry = base.hi() > 0;
+                
+                let mut hi = self.mem_fetch(self.pc);
                 self.inc_pc();
 
-                if self.status.carry()
+                if carry
                 {
                     // this is the oops cycle work here.. the lo-byte
                     // addition overflowed which means we need to spend
                     // an extra cycle adding the carry to the hi-byte
-                    self.alu_add(1);        // adding 0 works because all add operations already include the carry
+                    hi = hi.wrapping_add(1);
                     self.ir_cycles += 1;    // add the oops cycle into it
                 }
 
-                u16::make(self.a, lo)
+                u16::make(hi, base.lo())
             }
             AddressingMode::AbsoluteY => {
-                self.a = self.mem_fetch(self.pc);
+                let ptr = self.mem_fetch(self.pc);
                 self.inc_pc();
-                self.alu_add(self.y);
-                let lo = self.a;
-
-                self.a = self.mem_fetch(self.pc);
-                self.inc_pc();
+                let base = ptr as u16 + self.y as u16;
+                let carry = base.hi() > 0;
                 
-                if self.status.carry()
+                let mut hi = self.mem_fetch(self.pc);
+                self.inc_pc();
+
+                if carry
                 {
                     // this is the oops cycle work here.. the lo-byte
                     // addition overflowed which means we need to spend
                     // an extra cycle adding the carry to the hi-byte
-                    self.alu_add(1);        // add the carry
+                    hi = hi.wrapping_add(1);
                     self.ir_cycles += 1;    // add the oops cycle into it
                 }
 
-                u16::make(self.a, lo)
+                u16::make(hi, base.lo())
             }
-            // AddressingMode::Indirect => {
-            //     let base = self.mem_fetch(self.pc);
-            //     let lo = self.mem_fetch(base as u16);
-            //     let hi = self.mem_fetch(base.wrapping_add(1) as u16);
-            //     u16::make(hi,lo)
-            // },
-            AddressingMode::IndirectX => {
-                self.a = self.mem_fetch(self.pc);
+             AddressingMode::Indirect => {
+                // Only used by the JMP instruction on the 6502
+                let base_lo = self.mem_fetch(self.pc);
                 self.inc_pc();
-                self.alu_add(self.x);
+                let base_hi = self.mem_fetch(self.pc);
+                self.inc_pc();
 
-                let lo = self.mem_fetch(self.a as u16);
-                self.alu_add(1);
-                let hi = self.mem_fetch(self.a as u16);
+                let lo = self.mem_fetch(u16::make(base_hi,base_lo));
+                
+                // There is a bug in the 6502 that causes this addressing mode to work improperly in some cases.
+                // If the jump operation is accessing the last byte of a page (ie, $xxFF), then the high byte will
+                // be accessed at $00 of that page, instead of $00 of the next page.
+                // eg, JMP ($21FF) will grab the low byte from $21FF and the high byte from $2100 instead of $2200 as
+                // would be expected. 
+                let hi = self.mem_fetch(u16::make(base_hi,base_lo.wrapping_add(1)));  
+                u16::make(hi,lo)
+            },
+            AddressingMode::IndirectX => {
+                let base = self.mem_fetch(self.pc);
+                self.inc_pc();
+                let addr = base.wrapping_add(self.x);
+
+                let lo = self.mem_fetch(addr as u16);
+                let hi = self.mem_fetch(addr as u16 + 1);
                 u16::make(hi, lo)
             }
             AddressingMode::IndirectY => {
-                self.a = self.mem_fetch(self.pc);
+                let ptr = self.mem_fetch(self.pc);
                 self.inc_pc();
 
-                let lo = self.mem_fetch(self.a as u16);
-                self.alu_add(1);
-                let hi = self.mem_fetch(self.a as u16);
+                let base = self.mem_fetch(ptr as u16) as u16 + self.y as u16;
+                let mut hi = self.mem_fetch(ptr as u16 + 1);
 
-                self.a = lo;
-                self.alu_add(self.y);
-                let ptr_lo = self.a;
-                self.a = hi;
+                let carry = base.hi() > 0;
 
-                if self.status.carry()
+                if carry
                 {
                     // this is the oops cycle work here.. the lo-byte
                     // addition overflowed which means we need to spend
                     // an extra cycle adding the carry to the hi-byte
-                    self.alu_add(1);        // add the carry
-                    self.ir_cycles += 1;    // add the oops cycle into it
+                    hi = hi.wrapping_add(1); // add the carry
+                    self.ir_cycles += 1;     // add the oops cycle into it
                 }
 
-                u16::make(self.a,ptr_lo)
+                u16::make(hi, base.lo())
             },
+            AddressingMode::Relative => {
+                let offset = self.mem_fetch(self.pc);
+                
+                let addr = self.pc + offset as u16;
+
+                self.inc_pc();
+                addr
+            }
             _ => panic!("address mode {:?} is not supported", mode),
         }
-    }
-
-    fn fetch_jmp_address(&mut self) -> u16
-    {
-        self.a = self.mem_fetch(self.pc);
-        self.inc_pc();
-
-        self.alu_add(self.pc.lo());
-
-        u16::make(self.pc.hi(), self.a)
     }
 
     /*************************
      * ALU operations
      *************************/
 
-    fn alu_add(&mut self, v:u8)
+    fn alu_add(&mut self, a:u8, b:u8) -> u8
     {
         // a rather ambitious attempt to generalize the alu operations with
         // the status flag updates
@@ -401,114 +415,53 @@ impl Cpu6502 {
         //  another carry was generated
         //  signed overflow occurred if the values are interpreted as signed
 
-        let result = self.a as u16 + v as u16;
-        let signed_overflow = !(self.a ^ v) & (self.a ^ result.lo());
+        let result = a as u16 + b as u16 + self.status.carry() as u16;
+        let signed_overflow = !(a ^ b) & (a ^ result.lo());
 
-        self.a = result.lo();
-
-        self.status.set_zero(self.a == 0);
-        self.status.set_negative(self.a.on(7));
         self.status.set_carry(result.hi() > 0);
-        self.status.set_overflow(signed_overflow.on(7));
+        self.status.set_overflow(signed_overflow.bit(7));
+
+        result.lo()
     }
 
-    fn alu_sub(&mut self, v:u8)
+    fn alu_sub(&mut self, a:u8, b:u8) -> u8
     {
         // further ambitious bullshit from me...
+        // two's complement based subtraction is 
+        // the same as a + !b, so just use the add routine
 
-        self.status.set_carry(v <= self.a);
-
-        let result = self.a.wrapping_sub(v);
-        let signed_overflow = !(self.a ^ v) & (self.a ^ result);
-
-        self.status.set_overflow(false);
-        self.status.set_zero(result == 0);
-        self.status.set_negative(signed_overflow.on(7));
-
-        self.a = result;
+        self.alu_add(a, !b)
     }
 
-    fn alu_and(&mut self, v:u8)
+    fn alu_lsr(&mut self, a:u8) -> u8
     {
-        self.a &= v;
+        self.status.set_carry(a.on(0));
 
-        self.alu_status();
+        a >> 1
     }
 
-    fn alu_xor(&mut self, v:u8)
+    fn alu_asl(&mut self, a:u8) -> u8
     {
-        self.a ^= v;
+        self.status.set_carry(a.on(7));
 
-        self.alu_status();
+        a << 1
     }
 
-    fn alu_or(&mut self, v:u8)
+    fn alu_rol(&mut self, a:u8) -> u8
     {
-        self.a |= v;
+        let carry = self.status.carry() ;
+        self.status.set_carry(a.on(7));
 
-        self.alu_status();
+        (a << 1).wrapping_add(ternary!(carry,1,0))
     }
 
-    fn alu_lsr(&mut self)
-    {
-        self.status.set_overflow(false);
-        self.status.set_carry(self.a.on(0));
-
-        self.a >>= 1;
-        
-        self.status.set_zero(self.a == 0);
-        self.status.set_negative(self.a.on(7));
-    }
-
-    fn alu_asl(&mut self)
-    {
-        self.status.set_overflow(false);
-        self.status.set_carry(self.a.on(7));
-
-        self.a <<= 1;
-        
-        self.status.set_zero(self.a == 0);
-        self.status.set_negative(self.a.on(7));
-    }
-
-    fn alu_rol(&mut self)
+    fn alu_ror(&mut self, a:u8) -> u8
     {
         let carry = self.status.carry() ;
 
-        self.status.set_overflow(false);
-        self.status.set_carry(self.a.on(7));
+        self.status.set_carry(a.on(0));
 
-        self.a <<= 1;
-        if carry {
-            self.a = self.a.wrapping_add(1);
-        }
-        
-        self.status.set_zero(self.a == 0);
-        self.status.set_negative(self.a.on(7));
-    }
-
-    fn alu_ror(&mut self)
-    {
-        let carry = self.status.carry() ;
-
-        self.status.set_overflow(false);
-        self.status.set_carry(self.a.on(0));
-
-        self.a >>= 1;
-        if carry {
-            self.a += self.a.wrapping_add(0x80);
-        }
-        
-        self.status.set_zero(self.a == 0);
-        self.status.set_negative(self.a.on(7));
-    }
-
-    fn alu_status(&mut self)
-    {
-        self.status.set_overflow(false);
-        self.status.set_carry(false);
-        self.status.set_zero(self.a == 0);
-        self.status.set_negative(self.a.on(7));
+        (a >> 1).wrapping_add(ternary!(carry,0x80,0))
     }
 
     fn alu_compare(&mut self, v1: u8, v2: u8)
@@ -609,9 +562,12 @@ impl Cpu6502 {
     fn op_adc(&mut self, addr_mode: AddressingMode)
     {
         let addr = self.fetch_operand_address(addr_mode);
-        let value = self.mem_fetch(addr).wrapping_add(ternary!(self.status.carry(), 1u8, 0u8));
+        let value = self.mem_fetch(addr);
         
-        self.alu_add(value);
+        self.a = self.alu_add(self.a, value);
+        self.a = self.alu_add(self.a, 0);       // invoke 2nd time with 0 to catch the carry bit
+
+        self.update_status(self.a);
     }
 
     fn op_and(&mut self, addr_mode: AddressingMode)
@@ -619,7 +575,9 @@ impl Cpu6502 {
         let addr = self.fetch_operand_address(addr_mode);
         let value = self.mem_fetch(addr);
 
-        self.alu_and(value);
+        self.a &= value;
+
+        self.update_status(self.a);
     }
 
     fn op_asl(&mut self, addr_mode: AddressingMode)
@@ -627,16 +585,16 @@ impl Cpu6502 {
         let addr = self.fetch_operand_address(addr_mode);
         let value = self.mem_fetch(addr);
 
-        self.a = value;
-        self.alu_asl();
+        let result = self.alu_asl(value);
+        self.update_status(value);
 
         // now write the value back out
-        self.mem_store(addr, self.a);
+        self.mem_store(addr, result);
     }
 
     fn op_bcc(&mut self, addr_mode: AddressingMode)
     {
-        let jmp_addr = self.fetch_jmp_address();
+        let jmp_addr = self.fetch_operand_address(addr_mode);
         
         if self.status.carry() == false
         {
@@ -646,7 +604,7 @@ impl Cpu6502 {
 
     fn op_bcs(&mut self, addr_mode: AddressingMode)
     {
-        let jmp_addr = self.fetch_jmp_address();
+        let jmp_addr = self.fetch_operand_address(addr_mode);
         
         if self.status.carry()
         {
@@ -656,7 +614,7 @@ impl Cpu6502 {
 
     fn op_beq(&mut self, addr_mode: AddressingMode)
     {
-        let jmp_addr = self.fetch_jmp_address();
+        let jmp_addr =self.fetch_operand_address(addr_mode);
         
         if self.status.zero()
         {
@@ -674,7 +632,7 @@ impl Cpu6502 {
 
     fn op_bmi(&mut self, addr_mode: AddressingMode)
     {
-        let jmp_addr = self.fetch_jmp_address();
+        let jmp_addr = self.fetch_operand_address(addr_mode);
 
         if self.status.negative()
         {
@@ -684,7 +642,7 @@ impl Cpu6502 {
 
     fn op_bne(&mut self, addr_mode: AddressingMode)
     {
-        let jmp_addr = self.fetch_jmp_address();
+        let jmp_addr = self.fetch_operand_address(addr_mode);
         
         if self.status.zero() == false
         {
@@ -694,7 +652,7 @@ impl Cpu6502 {
 
     fn op_bpl(&mut self, addr_mode: AddressingMode)
     {
-        let jmp_addr = self.fetch_jmp_address();
+        let jmp_addr = self.fetch_operand_address(addr_mode);
 
         if self.status.negative() == false
         {
@@ -731,7 +689,7 @@ impl Cpu6502 {
 
     fn op_bvc(&mut self, addr_mode: AddressingMode)
     {
-        let jmp_addr = self.fetch_jmp_address();
+        let jmp_addr = self.fetch_operand_address(addr_mode);
         
         if self.status.overflow() == false
         {
@@ -741,7 +699,7 @@ impl Cpu6502 {
 
     fn op_bvs(&mut self, addr_mode: AddressingMode)
     {
-        let jmp_addr = self.fetch_jmp_address();
+        let jmp_addr = self.fetch_operand_address(addr_mode);
         
         if self.status.overflow()
         {
@@ -798,24 +756,22 @@ impl Cpu6502 {
         let addr = self.fetch_operand_address(addr_mode);
         let value = self.mem_fetch(addr);
 
-        self.a = value;
-        self.alu_sub(1);
+        let result = value.wrapping_sub(1);
+        self.update_status(result);
 
-        self.mem_store(addr, self.a);
+        self.mem_store(addr, result);
     }
 
     fn op_dex(&mut self, addr_mode: AddressingMode)
     {
-        self.a = self.x;
-        self.alu_sub(1);
-        self.x = self.a;        
+        self.x = self.x.wrapping_sub(1);
+        self.update_status(self.x);
     }
 
     fn op_dey(&mut self, addr_mode: AddressingMode)
     {
-        self.a = self.y;
-        self.alu_sub(1);
-        self.y = self.a;        
+        self.y = self.y.wrapping_sub(1);
+        self.update_status(self.y);
     }
 
     fn op_eor(&mut self, addr_mode: AddressingMode)
@@ -823,7 +779,8 @@ impl Cpu6502 {
         let addr = self.fetch_operand_address(addr_mode);
         let value = self.mem_fetch(addr);
 
-        self.alu_xor(value);
+        self.a ^= value;
+        self.update_status(self.a);
     }
 
     fn op_inc(&mut self, addr_mode: AddressingMode)
@@ -831,24 +788,22 @@ impl Cpu6502 {
         let addr = self.fetch_operand_address(addr_mode);
         let value = self.mem_fetch(addr);
 
-        self.a = value;
-        self.alu_add(1);
+        let result = value.wrapping_add(1);
+        self.update_status(result);
 
-        self.mem_store(addr, self.a);
+        self.mem_store(addr, result);
     }
 
     fn op_inx(&mut self, addr_mode: AddressingMode)
     {
-        self.a = self.x;
-        self.alu_add(1);
-        self.x = self.a;
+        self.x = self.x.wrapping_add(1);
+        self.update_status(self.x);
     }
 
     fn op_iny(&mut self, addr_mode: AddressingMode)
     {
-        self.a = self.x;
-        self.alu_add(1);
-        self.x = self.a;
+        self.y = self.y.wrapping_add(1);
+        self.update_status(self.y);
     }
 
     fn op_jmp(&mut self, addr_mode: AddressingMode)
@@ -875,42 +830,41 @@ impl Cpu6502 {
         let addr = self.fetch_operand_address(addr_mode);
         self.a = self.mem_fetch(addr);
 
-        self.alu_status();
+        self.update_status(self.a);
     }
 
     fn op_ldx(&mut self, addr_mode: AddressingMode)
     {
         let addr = self.fetch_operand_address(addr_mode);
-        self.a = self.mem_fetch(addr);
-        self.x = self.a;
-
-        self.alu_status();
+        self.x = self.mem_fetch(addr);
+        
+        self.update_status(self.x);
     }
 
     fn op_ldy(&mut self, addr_mode: AddressingMode)
     {
         let addr = self.fetch_operand_address(addr_mode);
-        self.a = self.mem_fetch(addr);
-        self.y = self.a;
-
-        self.alu_status();
+        self.y = self.mem_fetch(addr);
+        
+        self.update_status(self.y);
     }
 
     fn op_lsr(&mut self, addr_mode: AddressingMode)
     {
         if addr_mode == AddressingMode::Accumulator
         {
-            self.alu_lsr();
+            self.a = self.alu_lsr(self.a);
+            self.update_status(self.a);
         }
         else
         {
             let addr = self.fetch_operand_address(addr_mode);
             let value = self.mem_fetch(addr);
 
-            self.a = value;
-            self.alu_lsr();
+            let result = self.alu_lsr(value);
+            self.update_status(result);
 
-            self.mem_store(addr, self.a);
+            self.mem_store(addr, result);
         }
     }
 
@@ -925,7 +879,8 @@ impl Cpu6502 {
         let addr = self.fetch_operand_address(addr_mode);
         let value = self.mem_fetch(addr);
 
-        self.alu_or(value);
+        self.a |= value;
+        self.update_status(self.a);
     }
 
     fn op_pha(&mut self, addr_mode: AddressingMode)
@@ -954,17 +909,18 @@ impl Cpu6502 {
     {
         if addr_mode == AddressingMode::Accumulator
         {
-            self.alu_rol();
+            self.a = self.alu_rol(self.a);
+            self.update_status(self.a);
         }
         else 
         {
             let addr = self.fetch_operand_address(addr_mode);
             let value = self.mem_fetch(addr);
 
-            self.a = value;
-            self.alu_rol();
+            let result = self.alu_rol(value);
+            self.update_status(result);
 
-            self.mem_store(addr, self.a) ;
+            self.mem_store(addr, result) ;
         }
     }
 
@@ -972,17 +928,18 @@ impl Cpu6502 {
     {
         if addr_mode == AddressingMode::Accumulator
         {
-            self.alu_ror();
+            self.a = self.alu_ror(self.a);
+            self.update_status(self.a);
         }
         else
         {
             let addr = self.fetch_operand_address(addr_mode);
             let value = self.mem_fetch(addr);
 
-            self.a = value;
-            self.alu_ror();
+            let result = self.alu_ror(value);
+            self.update_status(result);
 
-            self.mem_store(addr, self.a) ;
+            self.mem_store(addr, result) ;
         }
     }
 
@@ -1008,7 +965,8 @@ impl Cpu6502 {
         let addr = self.fetch_operand_address(addr_mode);
         let value = self.mem_fetch(addr).wrapping_sub(ternary!(self.status.carry(), 0u8, 1u8));
 
-        self.alu_sub(value);
+        self.a = self.alu_sub(self.a, value);
+        self.a = self.alu_sub(self.a, 0);       // 2nd time will handle the carry 
     }
 
     fn op_sec(&mut self, addr_mode: AddressingMode)
@@ -1058,14 +1016,13 @@ impl Cpu6502 {
     {
         self.x = self.sp;
 
-        self.status.set_negative(self.x.on(7));
-        self.status.set_zero(self.x == 0);
+        self.update_status(self.x);
     }
 
     fn op_txa(&mut self, addr_mode: AddressingMode)
     {
         self.a = self.x;
-        self.alu_status();
+        self.update_status(self.a);
     }
 
     fn op_txs(&mut self, addr_mode: AddressingMode)
@@ -1076,7 +1033,7 @@ impl Cpu6502 {
     fn op_tya(&mut self, addr_mode: AddressingMode)
     {
         self.a = self.y;
-        self.alu_status();
+        self.update_status(self.a);
     }
 
     //--TODO: "Extra" opcodes
@@ -1091,11 +1048,11 @@ impl Cpu6502 {
         let addr = self.fetch_operand_address(addr_mode);
         let value = self.mem_fetch(addr);
 
-        let result = value.wrapping_add(1) + 
-                ternary!(self.status.carry(), 0, 1) // inverse of carry...
-            ;
+        let result = value.wrapping_add(1);
+        self.status.flags.flip(BIT_C);  // flip the carry bit for !c logic
 
-        self.alu_sub(result);
+        self.a = self.alu_sub(self.a, result);
+        self.update_status(self.a);
 
         self.mem_store(addr, self.a);
     }
@@ -1125,7 +1082,7 @@ impl Cpu6502 {
         self.x = self.a;
         self.sp = self.a;
 
-        self.alu_status();
+        self.update_status(self.a);
     }
 
     fn op_lax(&mut self, addr_mode: AddressingMode)
@@ -1136,7 +1093,7 @@ impl Cpu6502 {
         self.a = value;
         self.x = value;
 
-        self.alu_status();
+        self.update_status(self.a);
     }
 
     fn op_sha(&mut self, addr_mode: AddressingMode)
@@ -1169,7 +1126,7 @@ impl Cpu6502 {
 
         self.a &= self.x & value;
         
-        self.alu_status();
+        self.update_status(self.a);
     }
 
     fn op_shx(&mut self, addr_mode: AddressingMode)
@@ -1183,24 +1140,11 @@ impl Cpu6502 {
     fn op_rra(&mut self, addr_mode: AddressingMode)
     {
         let addr = self.fetch_operand_address(addr_mode);
-        let mut value = self.mem_fetch(addr);
+        let value = self.mem_fetch(addr);
 
-        let carry = self.status.carry() ;
-
-        value >>= 1;
-        let new_carry = value.on(0);
-        self.status.set_carry(new_carry);
-        
-        if carry {
-            value += self.a.wrapping_add(0x80);
-        }
-
-        // run the normal add w/ carry operation
-        if new_carry {
-            value += 1;
-        }
-
-        self.alu_add(value);
+        let result = self.alu_ror(value);
+        self.a = self.alu_add(self.a, result);
+        self.update_status(self.a);
     }
 
     fn op_tas(&mut self, addr_mode: AddressingMode)
@@ -1227,15 +1171,9 @@ impl Cpu6502 {
         let addr = self.fetch_operand_address(addr_mode);
         let value = self.mem_fetch(addr);
 
-        let mut result = self.a & value;
-        result >>= 1;
-        
-        if self.status.carry() {
-            result |= 0b10000000;
-        }
-
-        self.a = result;
-        self.alu_status();
+        self.a &= value;
+        self.a = self.alu_ror(self.a);
+        self.update_status(self.a);
     }
 
     fn op_sre(&mut self, addr_mode: AddressingMode)
@@ -1243,37 +1181,29 @@ impl Cpu6502 {
         let addr = self.fetch_operand_address(addr_mode);
         let value = self.mem_fetch(addr);
 
-        self.a ^= value >> 1;
-        self.alu_status();
-
-        self.status.set_carry(value & 0x01 != 0);
+        self.a ^= self.alu_lsr(value);
+        self.update_status(self.a);
     }
 
     fn op_alr(&mut self, addr_mode: AddressingMode)
     {
+        //--TODO: Optimize this to utilize the immediate value
         let addr = self.fetch_operand_address(addr_mode);
         let value = self.mem_fetch(addr);
 
         self.a &= value;
-        self.alu_lsr();
+        self.a = self.alu_lsr(self.a);
+
+        self.update_status(self.a);
     }
 
     fn op_rla(&mut self, addr_mode: AddressingMode)
     {
         let addr = self.fetch_operand_address(addr_mode);
-        let mut value = self.mem_fetch(addr);
-        let set_carry = value.on(7);
-
-        if self.status.carry() {
-            value = value.wrapping_add( value.wrapping_add(1) );
-        }
-        else {
-            value <<= 1;
-        }
-
-        self.a &= value;
-        self.alu_status();
-        self.status.set_carry(set_carry);
+        let value = self.mem_fetch(addr);
+        
+        self.a &= self.alu_rol(value);
+        self.update_status(self.a);
     }
 
     fn op_anc(&mut self, addr_mode: AddressingMode)
@@ -1291,14 +1221,10 @@ impl Cpu6502 {
     fn op_slo(&mut self, addr_mode: AddressingMode)
     {
         let addr = self.fetch_operand_address(addr_mode);
-        let mut value = self.mem_fetch(addr);
-        let set_carry = value.on(7);
+        let value = self.mem_fetch(addr);
 
-        value <<= 1;
-        self.a |= value;
-
-        self.alu_status();
-        self.status.set_carry(set_carry);
+        self.a |= self.alu_asl(value);
+        self.update_status(self.a);
     }
 }
 
@@ -1317,10 +1243,9 @@ mod test {
     {
         let mut cpu = create_cpu();   
         
-        cpu.a = 13;
-        cpu.alu_add(211);
+        let result = cpu.alu_add(13, 211);
         
-        assert_eq!(cpu.a, 224);
+        assert_eq!(result, 224);
         assert_eq!(cpu.status.carry(), false);
     }
     
@@ -1329,10 +1254,9 @@ mod test {
     {
         let mut cpu = create_cpu();   
         
-        cpu.a = 254;
-        cpu.alu_add(6);
+        let result = cpu.alu_add(254, 6);
         
-        assert_eq!(cpu.a, 4);
+        assert_eq!(result, 4);
         assert_eq!(cpu.status.carry(), true);
     }
     
@@ -1341,11 +1265,10 @@ mod test {
     {
         let mut cpu = create_cpu();   
         
-        cpu.a = 254;
-        cpu.alu_add(6); // 4 + carry
-        cpu.alu_add(6); 
+        let temp = cpu.alu_add(254,6); // 4 + carry
+        let result = cpu.alu_add(temp, 6); 
         
-        assert_eq!(cpu.a, 10);
+        assert_eq!(result, 11);
         assert_eq!(cpu.status.carry(), false);
     }
 }

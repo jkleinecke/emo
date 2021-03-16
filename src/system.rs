@@ -10,7 +10,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 const SYSMEMSIZE: usize = 0xFFFF;
-pub const PROGRAM_START: u16 = 0x600;
+pub const PROGRAM_START: u16 = 0x8000;
 
 pub struct Nes {
     pub sys_clocks:u64,

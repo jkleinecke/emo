@@ -102,25 +102,34 @@ pub trait BitTest:
 {
     fn set(&mut self, place:u8, value:bool)
     {
-        // blank the value
-        *self &= !(Self::from(1u8) << place);
-        // set the value
-        *self |= Self::from(value as u8) << place;
+        //  Blank the selected bit
+		*self &= !(Self::from(1u8) << place);
+		//  Set the selected bit
+		*self |= Self::from(value as u8) << place;
     }
 
     fn get(&self, place:u8) -> bool
+    {
+        self.bit(place)
+    }
+    
+    fn bit(&self, place:u8) -> bool
     {
         (*self >> place) & Self::from(1) == Self::from(1)
     }
 
     fn on(&self, place:u8) -> bool
     {
-        (*self >> place) & Self::from(1) == Self::from(1)
+        self.bit(place)
     }
     
     fn off(&self, place:u8) -> bool
     {
-        (*self >> place) & Self::from(1) != Self::from(1)
+        !self.bit(place)
+    }
+
+    fn flip(&mut self, place:u8) {
+        self.set(place, !self.get(place));
     }
 }
 
