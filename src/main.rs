@@ -189,18 +189,17 @@ impl Ui {
 
     pub fn update_instr(siv: &mut Cursive, cpu: &Cpu6502, data: &[u8;0xFFFF])
     {
-        let mut decoded = DecodedOp::from_ir(cpu.ir);
-        let mut iraddr = cpu.pc - decoded.opsize as u16;    // current loaded ir has already moved the pc its full size...
+        let mut iraddr = cpu.pc;
 
         //let max_rows = cmp::min(16, 0xFFFFu16 - iraddr);
 
         for i in 0..16
         {
-            decoded = DecodedOp::from_ir(data[iraddr as usize + i]);
+            let decoded = DecodedOp::from_ir(data[iraddr as usize]);
             
             siv.call_on_name(format!("iraddr {}", i).as_str(), |v: &mut TextView| {
                 v.set_content(
-                    StyledString::plain(format!("{:#06X}",iraddr + i as u16).as_str())
+                    StyledString::plain(format!("{:#06X}",iraddr as u16).as_str())
                 )
             });
             
@@ -435,7 +434,7 @@ impl Ui {
             v.set_content(format!("{:02X}",cpu.sp))
         });
         siv.call_on_name("remcycles", |v: &mut TextView| {
-            v.set_content(format!("{}",cpu.ir_cycles))
+            v.set_content(format!("{}",cpu.ir_cycles+1))
         });
     }
 
@@ -517,14 +516,14 @@ fn main() {
     let mut texture = creator.create_texture_target(PixelFormatEnum::RGB24, 32, 32).unwrap();
 
     let (mapper, mut cpu) = init_game();
-    cpu.clock();
-
+    
     mapper.borrow_mut().copy_vram(&mut texture);
     canvas.copy(&texture, None, None).unwrap();
     canvas.present();
 
+    cpu.clock();
     Ui::update(&mut runner, &cpu, &mapper.borrow().ram);
-    runner.refresh();
+    //runner.refresh();
 
     loop
     {
@@ -543,7 +542,7 @@ fn main() {
                 let mut map = mapper.borrow_mut();
                 
                 Ui::update(&mut runner, &cpu, &map.ram);
-                runner.refresh();
+                //runner.refresh();
 
                 map.update_rand();
                 if map.update_dirty_texture(&mut texture)
