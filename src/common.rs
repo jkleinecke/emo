@@ -3,6 +3,28 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
+
+use std::cmp::Eq;
+use std::convert::From;
+use std::default::Default;
+use std::fmt::{
+	Binary,
+	Debug,
+	Display,
+	LowerHex,
+	UpperHex,
+};
+use std::ops::{
+	Not,
+	BitAnd,
+	BitAndAssign,
+	BitOrAssign,
+	Shl,
+	ShlAssign,
+	Shr,
+	ShrAssign,
+};
+
 pub trait WORD {
     fn hi(&self) -> u8;
     fn lo(&self) -> u8;
@@ -43,20 +65,63 @@ impl WORD for u16 {
 // }
 
 
-pub fn test_bit(x: u8, i: u8) -> bool {
-    return (x >> i) & 1 == 1;
-}
-
 // pub fn run_clocks(x: &mut dyn Clocked, num_clocks: u32) {
 //     for _i in 0..num_clocks {
 //         x.clock();
 //     }
 // }
 
-pub fn ternary<T>(cond: bool, on_true: T, on_false: T) -> T {
-    if cond {
-        on_true
-    } else {
-        on_false
+
+pub trait BitTest:
+    Binary
+    + BitAnd<Self, Output=Self>
+    + BitAndAssign<Self>
+    + BitOrAssign<Self>
+    //  Permit indexing into a generic array
+    + Copy
+    + Debug
+    //  `BitVec` cannot push new elements without this. (Well, it CAN, but
+    //  `mem::uninitialized` is Considered Harmful.)
+    + Default
+    + Display
+    //  Permit testing a value against 1 in `get()`.
+    + Eq
+    //  Rust treats numeric literals in code as vaguely typed and does not make
+    //  them concrete until long after trait expansion, so this enables building
+    //  a concrete Self value from a numeric literal.
+    + From<u8>
+    + LowerHex
+    + Not<Output=Self>
+    + Shl<u8, Output=Self>
+    + ShlAssign<u8>
+    + Shr<u8, Output=Self>
+    + ShrAssign<u8>
+    //  Allow direct access to a concrete implementor type.
+    + Sized
+    + UpperHex
+{
+    fn set(&mut self, place:u8, value:bool)
+    {
+        // blank the value
+        *self &= !(Self::from(1u8) << place);
+        // set the value
+        *self |= Self::from(value as u8) << place;
+    }
+
+    fn get(&self, place:u8) -> bool
+    {
+        (*self >> place) & Self::from(1) == Self::from(1)
+    }
+
+    fn on(&self, place:u8) -> bool
+    {
+        (*self >> place) & Self::from(1) == Self::from(1)
+    }
+    
+    fn off(&self, place:u8) -> bool
+    {
+        (*self >> place) & Self::from(1) != Self::from(1)
     }
 }
+
+impl BitTest for u8 {}

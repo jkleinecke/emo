@@ -7,8 +7,12 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bitflags = "1.2.1"
 rand = "=0.7.3"
+
+[dependencies.cursive]
+version = "0.16"
+default-features = false
+features = ["crossterm-backend"]
 
 [dependencies.sdl2]
 version = "0.34"

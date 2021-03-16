@@ -1,5 +1,7 @@
 #![allow(non_upper_case_globals)]
 
+use std::fmt;
+
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Operation {
     ADC,AND,ASL,BCC,BCS,BEQ,BIT,BMI,BNE,
@@ -15,26 +17,66 @@ pub enum Operation {
     SLO,
 }
 
+impl fmt::Display for Operation
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result 
+    {
+        write!(f, "{:?}", self)
+    }
+}
+
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum AddressingMode {
-    Immediate,
-    ZeroPage,
-    ZeroPageX,
-    ZeroPageY,
-    Absolute,
-    AbsoluteX,
-    AbsoluteY,
-    Indirect,
-    IndirectX,
-    IndirectY,
-    Relative,
-    Accumulator,
-    Implicit,
+    Immediate = 0,
+    ZeroPage = 1,
+    ZeroPageX = 2,
+    ZeroPageY = 3,
+    Absolute = 4,
+    AbsoluteX = 5,
+    AbsoluteY = 6,
+    Indirect = 7,
+    IndirectX = 8,
+    IndirectY = 9,
+    Relative = 10,
+    Accumulator = 11,
+    Implicit = 12,
 }
+
+pub const ADDR_OPSIZE_TABLE: [u8;13] =
+    [
+        2,      // immediate
+        2,2,2,  // zero page
+        3,3,3,  // absolute
+        3,2,2,  // indirect
+        2,      // relative
+        1,1     // accumulator
+    ];
 
 use AddressingMode::*;
 use Operation::*;
 
+impl fmt::Display for AddressingMode
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result 
+    {
+        write!(f, "{}",
+        match self {
+            Absolute => "abs",
+            Accumulator => "acc",
+            Immediate => "imm",
+            Implicit => "imp",
+            IndirectX => "izx",
+            IndirectY => "izy",
+            ZeroPage => "zp",
+            ZeroPageX => "zpx",
+            ZeroPageY => "zpy",
+            Relative => "rel",
+            AbsoluteX => "abx",
+            AbsoluteY => "aby",
+            Indirect => "ind",
+        })
+    }
+}
 
 type CycleCount = u8;
 
@@ -75,3 +117,41 @@ pub const OPCODE_TABLE: [(Operation, AddressingMode, CycleCount, CycleCount);256
 /* Ex */(CPX,imm,2,0),(SBC,izx,6,0),(NOP,imm,2,0),(ISC,izx,8,0),(CPX,zp, 3,0),(SBC,zp, 3,0),(INC,zp, 5,0),(ISC,zp, 5,0),(INX,imp,2,0),(SBC,imm,2,0),(NOP,imp,2,0),(SBC,imm,2,0),(CPX,abs,4,0),(SBC,abs,4,0),(INC,abs,6,0),(ISC,abs,6,0),
 /* Fx */(BEQ,rel,2,1),(SBC,izy,5,1),(KIL,imp,0,0),(ISC,izy,8,0),(NOP,zpx,4,0),(SBC,zpx,4,0),(INC,zpx,6,0),(ISC,zpx,6,0),(SED,imp,2,0),(SBC,aby,4,1),(NOP,imp,2,0),(ISC,aby,7,0),(NOP,abx,4,1),(SBC,abx,4,1),(INC,abx,7,0),(ISC,abx,7,0),
     ];
+
+#[derive(Debug)]
+pub struct DecodedOp
+{
+    pub ir: u8,
+
+    pub opcode: Operation,
+    pub addr_mode: AddressingMode,
+    pub opsize: u8,
+    
+    pub cycles: u8,
+    pub oops: bool,
+
+}
+
+impl DecodedOp
+{
+    pub fn from_ir(ir: u8) -> Self
+    {
+        let (operation, addr_mode, c1, c2) = OPCODE_TABLE[ir as usize];
+        let opsize = match ir {
+            0x00 => 2,  // break is size 2 despite the implied addressing mode
+            _ => ADDR_OPSIZE_TABLE[addr_mode as usize]
+        };
+
+        DecodedOp {
+            ir,  // read direct from memory, just in case we have the opsize incorrect
+            opcode: operation,
+            addr_mode,
+            opsize,
+            cycles: c1,
+            oops: match c2 {
+                0 => false,
+                _ => true,
+            }
+        }
+    }
+}

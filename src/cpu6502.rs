@@ -4,13 +4,19 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use crate::bitflags::*;
-use crate::common::{test_bit, ternary, WORD};
-use crate::bus::Bus;
+use crate::common::{BitTest, WORD};
+use crate::mapper::Mapper;
 use crate::system::Clocked;
 use crate::operations::*;
-use std::rc::Rc;
 use std::cell::RefCell;
+use std::rc::Rc;
+use std::fmt;
+
+macro_rules! ternary {
+    ($condition: expr, $_true: expr, $_false: expr) => {
+        if $condition { $_true } else { $_false }
+    };
+}
 
 /***********************************************************
  * 
@@ -31,35 +37,55 @@ const STACK_START: u8 = 0xFF;
 
 const OP_BRK: u8 = 0x00;
 
-bitflags! {
-    #[derive(Default)]
-    pub struct ProcessorStatus: u8 {
-        const Carry       = 0b00000001;
-        const Zero        = 0b00000010;
-        const Interrupt   = 0b00000100;
-        const Decimal     = 0b00001000;         // Not really used
+const BIT_C: u8       = 0b00000001;
+const BIT_Z: u8        = 0b00000010;
+const BIT_I: u8   = 0b00000100;
+const BIT_D: u8     = 0b00001000;         // Not really used
 
-        const Break       = 0b00010000;
-        const Unused      = 0b00100000;
-        const Overflow    = 0b01000000;
-        const Negative    = 0b10000000;
+const BIT_B: u8       = 0b00010000;
+const BIT_U: u8      = 0b00100000;
+const BIT_V: u8    = 0b01000000;
+const BIT_N: u8    = 0b10000000;
+
+#[derive(Default)]
+pub struct Status {
+    pub flags: u8,
+}
+
+impl fmt::Display for Status {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let n = ternary!(self.flags.on(BIT_N), 'N', 'n');
+        let v = ternary!(self.flags.on(BIT_V), 'V', 'v');
+        let b = ternary!(self.flags.on(BIT_B), 'B', 'b');
+        let d = ternary!(self.flags.on(BIT_D), 'D', 'd');
+        let i = ternary!(self.flags.on(BIT_I), 'I', 'i');
+        let z = ternary!(self.flags.on(BIT_Z), 'Z', 'z');
+        let c = ternary!(self.flags.on(BIT_C), 'C', 'c');
+
+        write!(f, "{}{}-{}{}{}{}{}", n,v,b,d,i,z,c)
     }
 }
 
-impl ProcessorStatus {
-    pub fn get_push_value(&self, from_irq:bool) -> u8 {
-        let mut pv = self.bits | ProcessorStatus::Break.bits ;        
-        
-        if from_irq == false {
-            pv |= ProcessorStatus::Decimal.bits;
-        }
-
-        return pv;
+impl Status {
+    pub fn initial() -> Self {
+        Status { flags: 0x34 }
     }
 
-    pub fn initial() -> ProcessorStatus {
-        ProcessorStatus::Unused | ProcessorStatus::Interrupt   // 0x34
-    }
+    pub fn carry(&self) -> bool { self.flags.on(BIT_C) }
+    pub fn zero(&self) -> bool { self.flags.on(BIT_Z) }
+    pub fn interrupt(&self) -> bool { self.flags.on(BIT_I) }
+    pub fn decimal(&self) -> bool { self.flags.on(BIT_D) }
+    pub fn r#break(&self) -> bool { self.flags.on(BIT_B) }
+    pub fn overflow(&self) -> bool { self.flags.on(BIT_V) }
+    pub fn negative(&self) -> bool { self.flags.on(BIT_N) }
+
+    pub fn set_carry(&mut self, v:bool) { self.flags.set(BIT_C,v); }
+    pub fn set_zero(&mut self, v:bool) { self.flags.set(BIT_Z,v); }
+    pub fn set_interrupt(&mut self, v:bool) { self.flags.set(BIT_I,v); }
+    pub fn set_decimal(&mut self, v:bool) { self.flags.set(BIT_D,v); }
+    pub fn set_break(&mut self, v:bool) { self.flags.set(BIT_B,v); }
+    pub fn set_overflow(&mut self, v:bool) { self.flags.set(BIT_V,v); }
+    pub fn set_negative(&mut self, v:bool) { self.flags.set(BIT_N,v); }
 }
 
 pub struct Cpu6502 {
@@ -67,19 +93,19 @@ pub struct Cpu6502 {
     pub x: u8,                      // X Register
     pub y: u8,                      // Y Register
     pub sp: u8,                     // Stack Pointer
-    pc: u16,                        // Internal Program Counter Register
+    pub pc: u16,                        // Internal Program Counter Register
     
-    pub status: ProcessorStatus,    // Status Register
+    pub status: Status,    // Status Register
 
     // internal registers
     pub ir_cycles: u8,
-    ir: u8,                         // active instruction register
+    pub ir: u8,                         // active instruction register
     ad: u16,                        // ADL / ADH internal register
 
     halted: bool,                   // fake register to show that we should be done
 
     // bus module
-    pub bus: Box<Bus>,
+    pub mapper: Rc<RefCell<dyn Mapper>>,
 
     // outgoing signals
     pub oe1:bool,                   // -> Controller 1 dump
@@ -115,7 +141,7 @@ impl Clocked for Cpu6502
 }
 
 impl Cpu6502 {
-    pub fn new(bus:Box<Bus>) -> Self {
+    pub fn new(mapper: Rc<RefCell<dyn Mapper>>) -> Self {
         Cpu6502 {
             a: 0,
             x: 0,
@@ -123,7 +149,7 @@ impl Cpu6502 {
             sp: STACK_START,
             pc: PC_START,
 
-            status: ProcessorStatus::initial(), 
+            status: Status::initial(), 
             
             ir_cycles: 0,
             ir:0,
@@ -131,8 +157,8 @@ impl Cpu6502 {
 
             halted: false,
 
-            bus,
-
+            mapper,
+            
             oe1:false,
             oe2:false,
         }
@@ -145,13 +171,13 @@ impl Cpu6502 {
         self.stack_push(self.pc.lo());
         
         /* push status on stack, */
-        let status = self.status.bits | ProcessorStatus::Unused.bits;
+        let status = self.status.flags | BIT_U;
         
         //--TODO!
         /*** At this point, the signal status determines which interrupt vector is used ***/
         self.stack_push(status);
         
-        self.status.set(ProcessorStatus::Interrupt, false) ;
+        self.status.set_interrupt(false) ;
         
         self.pc = self.mem_fetch16(PC_START);
         
@@ -177,28 +203,30 @@ impl Cpu6502 {
     }
 
     fn mem_fetch(&mut self, addr: u16) -> u8 {
-        self.bus.load(addr)
+        self.mapper.borrow_mut().read(addr)
     }
 
     fn mem_store(&mut self, addr: u16, v: u8) {
-        self.bus.store(addr,v);
+        self.mapper.borrow_mut().write(addr, v)
     }
 
     fn mem_fetch16(&mut self, addr: u16) -> u16 {
-        let lo = self.bus.load(addr);
-        let hi = self.bus.load(addr + 1);
+        let mut bus = self.mapper.borrow_mut();
+        let lo = bus.read(addr);
+        let hi = bus.read(addr + 1);
         u16::make(hi, lo)
     }
 
     fn mem_store16(&mut self, addr: u16, v: u16) {
-        self.bus.store(addr, v.lo());
-        self.bus.store(addr+1, v.hi());
+        let mut bus = self.mapper.borrow_mut();
+        bus.write(addr, v.lo());
+        bus.write(addr+1, v.hi());
     }
 
     fn stack_push(&mut self, v:u8) 
     {
         let addr = STACK_BASE + self.sp as u16;    // calc the stack pointer address
-        self.bus.store(addr, v) ;               // queue up the bus write
+        self.mapper.borrow_mut().write(addr, v) ;               // queue up the bus write
         self.sp -= 1;                       // decrement the stack pointer
     }
 
@@ -206,23 +234,17 @@ impl Cpu6502 {
     {
         self.sp += 1;                       // increment the stack pointer
         let addr = STACK_BASE + self.sp as u16;    // calc the stack pointer address
-        self.bus.load(addr)                   // bus read
+        self.mapper.borrow_mut().read(addr)                   // bus read
     }
 
     // Status Flags
 
     fn update_status(&mut self, result:u8)
     {
-        self.status.set(ProcessorStatus::Zero, result == 0);
-        self.status.set(ProcessorStatus::Negative, test_bit(result,7));
+        self.status.set_zero(result == 0);
+        self.status.set_negative(result.on(7));
     }
 
-    // Interrupt checks
-
-    fn is_interrupted(&self) -> bool {
-        self.status.contains(ProcessorStatus::Interrupt)
-    }
-    
     /**************************
      * Memory Addressing Modes
      **************************/
@@ -276,7 +298,7 @@ impl Cpu6502 {
                 self.a = self.mem_fetch(self.pc);
                 self.inc_pc();
 
-                if self.status.contains(ProcessorStatus::Carry)
+                if self.status.carry()
                 {
                     // this is the oops cycle work here.. the lo-byte
                     // addition overflowed which means we need to spend
@@ -296,7 +318,7 @@ impl Cpu6502 {
                 self.a = self.mem_fetch(self.pc);
                 self.inc_pc();
                 
-                if self.status.contains(ProcessorStatus::Carry)
+                if self.status.carry()
                 {
                     // this is the oops cycle work here.. the lo-byte
                     // addition overflowed which means we need to spend
@@ -336,7 +358,7 @@ impl Cpu6502 {
                 let ptr_lo = self.a;
                 self.a = hi;
 
-                if self.status.contains(ProcessorStatus::Carry)
+                if self.status.carry()
                 {
                     // this is the oops cycle work here.. the lo-byte
                     // addition overflowed which means we need to spend
@@ -384,24 +406,24 @@ impl Cpu6502 {
 
         self.a = result.lo();
 
-        self.status.set(ProcessorStatus::Zero, self.a == 0);
-        self.status.set(ProcessorStatus::Negative, test_bit(self.a,7));
-        self.status.set(ProcessorStatus::Carry, result.hi() > 0);
-        self.status.set(ProcessorStatus::Overflow, test_bit(signed_overflow, 7));
+        self.status.set_zero(self.a == 0);
+        self.status.set_negative(self.a.on(7));
+        self.status.set_carry(result.hi() > 0);
+        self.status.set_overflow(signed_overflow.on(7));
     }
 
     fn alu_sub(&mut self, v:u8)
     {
         // further ambitious bullshit from me...
 
-        self.status.set(ProcessorStatus::Carry, v <= self.a);
+        self.status.set_carry(v <= self.a);
 
         let result = self.a.wrapping_sub(v);
         let signed_overflow = !(self.a ^ v) & (self.a ^ result);
 
-        self.status.set(ProcessorStatus::Overflow, false);
-        self.status.set(ProcessorStatus::Zero, result == 0);
-        self.status.set(ProcessorStatus::Negative, test_bit(signed_overflow,7));
+        self.status.set_overflow(false);
+        self.status.set_zero(result == 0);
+        self.status.set_negative(signed_overflow.on(7));
 
         self.a = result;
     }
@@ -429,82 +451,71 @@ impl Cpu6502 {
 
     fn alu_lsr(&mut self)
     {
-        self.status.set(ProcessorStatus::Overflow, false);
-        self.status.set(ProcessorStatus::Carry, test_bit(self.a, 0));
+        self.status.set_overflow(false);
+        self.status.set_carry(self.a.on(0));
 
         self.a >>= 1;
         
-        self.status.set(ProcessorStatus::Zero, self.a == 0);
-        self.status.set(ProcessorStatus::Negative, test_bit(self.a,7));
+        self.status.set_zero(self.a == 0);
+        self.status.set_negative(self.a.on(7));
     }
-
-    // fn alu_asr(&mut self)
-    // {
-    //     self.status.set(ProcessorStatus::Overflow, false);
-    //     self.status.set(ProcessorStatus::Carry, test_bit(self.a, 0));
-
-    //     self.a = (self.a >> 1) | (self.a & 0x80);   // preserve the high-bit negative sign
-        
-    //     self.status.set(ProcessorStatus::Zero, self.a == 0);
-    //     self.status.set(ProcessorStatus::Negative, test_bit(self.a,7));
-    // }
 
     fn alu_asl(&mut self)
     {
-        self.status.set(ProcessorStatus::Overflow, false);
-        self.status.set(ProcessorStatus::Carry, test_bit(self.a, 7));
+        self.status.set_overflow(false);
+        self.status.set_carry(self.a.on(7));
 
         self.a <<= 1;
         
-        self.status.set(ProcessorStatus::Zero, self.a == 0);
-        self.status.set(ProcessorStatus::Negative, test_bit(self.a,7));
+        self.status.set_zero(self.a == 0);
+        self.status.set_negative(self.a.on(7));
     }
 
     fn alu_rol(&mut self)
     {
-        let carry = self.status.contains(ProcessorStatus::Carry) ;
+        let carry = self.status.carry() ;
 
-        self.status.set(ProcessorStatus::Overflow, false);
-        self.status.set(ProcessorStatus::Carry, test_bit(self.a, 7));
+        self.status.set_overflow(false);
+        self.status.set_carry(self.a.on(7));
 
         self.a <<= 1;
         if carry {
             self.a = self.a.wrapping_add(1);
         }
         
-        self.status.set(ProcessorStatus::Zero, self.a == 0);
-        self.status.set(ProcessorStatus::Negative, test_bit(self.a,7));
+        self.status.set_zero(self.a == 0);
+        self.status.set_negative(self.a.on(7));
     }
 
     fn alu_ror(&mut self)
     {
-        let carry = self.status.contains(ProcessorStatus::Carry) ;
+        let carry = self.status.carry() ;
 
-        self.status.set(ProcessorStatus::Overflow, false);
-        self.status.set(ProcessorStatus::Carry, test_bit(self.a, 0));
+        self.status.set_overflow(false);
+        self.status.set_carry(self.a.on(0));
 
         self.a >>= 1;
         if carry {
             self.a += self.a.wrapping_add(0x80);
         }
         
-        self.status.set(ProcessorStatus::Zero, self.a == 0);
-        self.status.set(ProcessorStatus::Negative, test_bit(self.a,7));
+        self.status.set_zero(self.a == 0);
+        self.status.set_negative(self.a.on(7));
     }
 
     fn alu_status(&mut self)
     {
-        self.status.set(ProcessorStatus::Overflow, false);
-        self.status.set(ProcessorStatus::Carry, false);
-        self.status.set(ProcessorStatus::Zero, self.a == 0);
-        self.status.set(ProcessorStatus::Negative, test_bit(self.a,7));
+        self.status.set_overflow(false);
+        self.status.set_carry(false);
+        self.status.set_zero(self.a == 0);
+        self.status.set_negative(self.a.on(7));
     }
 
     fn alu_compare(&mut self, v1: u8, v2: u8)
     {
-        self.status.set(ProcessorStatus::Negative, test_bit(v1.wrapping_sub(v2), 7));
-        self.status.set(ProcessorStatus::Zero, v1 == v2);
-        self.status.set(ProcessorStatus::Carry, v1 >= v2);
+        self.status.set_negative(v1.wrapping_sub(v2).on(7));
+        self.status.set_zero(v1 == v2);
+        self.status.set_carry(v1 >= v2);
     }
 
     /*************************
@@ -598,7 +609,7 @@ impl Cpu6502 {
     fn op_adc(&mut self, addr_mode: AddressingMode)
     {
         let addr = self.fetch_operand_address(addr_mode);
-        let value = self.mem_fetch(addr).wrapping_add(ternary(self.status.contains(ProcessorStatus::Carry), 1u8, 0u8));
+        let value = self.mem_fetch(addr).wrapping_add(ternary!(self.status.carry(), 1u8, 0u8));
         
         self.alu_add(value);
     }
@@ -627,7 +638,7 @@ impl Cpu6502 {
     {
         let jmp_addr = self.fetch_jmp_address();
         
-        if self.status.contains(ProcessorStatus::Carry) == false
+        if self.status.carry() == false
         {
             self.pc = jmp_addr;
         }
@@ -637,7 +648,7 @@ impl Cpu6502 {
     {
         let jmp_addr = self.fetch_jmp_address();
         
-        if self.status.contains(ProcessorStatus::Carry)
+        if self.status.carry()
         {
             self.pc = jmp_addr;
         }
@@ -647,7 +658,7 @@ impl Cpu6502 {
     {
         let jmp_addr = self.fetch_jmp_address();
         
-        if self.status.contains(ProcessorStatus::Zero)
+        if self.status.zero()
         {
             self.pc = jmp_addr;
         }
@@ -658,14 +669,14 @@ impl Cpu6502 {
         let addr = self.fetch_operand_address(addr_mode);
         let value = self.mem_fetch(addr);
 
-        self.status.set(ProcessorStatus::Zero, (self.a & value) == 0);
+        self.status.set_zero((self.a & value) == 0);
     }
 
     fn op_bmi(&mut self, addr_mode: AddressingMode)
     {
         let jmp_addr = self.fetch_jmp_address();
 
-        if self.status.contains(ProcessorStatus::Negative)
+        if self.status.negative()
         {
             self.pc = jmp_addr;
         }
@@ -675,7 +686,7 @@ impl Cpu6502 {
     {
         let jmp_addr = self.fetch_jmp_address();
         
-        if self.status.contains(ProcessorStatus::Zero) == false
+        if self.status.zero() == false
         {
             self.pc = jmp_addr;
         }
@@ -685,7 +696,7 @@ impl Cpu6502 {
     {
         let jmp_addr = self.fetch_jmp_address();
 
-        if self.status.contains(ProcessorStatus::Negative) == false
+        if self.status.negative() == false
         {
             self.pc = jmp_addr;
         }
@@ -698,7 +709,7 @@ impl Cpu6502 {
         /* push pc lo on stack */
         self.stack_push(self.pc.lo());
         /* push status on stack, */
-        let status = self.status.bits | ProcessorStatus::Unused.bits | ProcessorStatus::Break.bits;
+        let status = self.status.flags | BIT_U | BIT_B;
             
             // if self.nmi || self.irq {
             //     status |= ProcessorStatus::Interrupt.bits;
@@ -722,7 +733,7 @@ impl Cpu6502 {
     {
         let jmp_addr = self.fetch_jmp_address();
         
-        if self.status.contains(ProcessorStatus::Overflow) == false
+        if self.status.overflow() == false
         {
             self.pc = jmp_addr;
         }
@@ -732,7 +743,7 @@ impl Cpu6502 {
     {
         let jmp_addr = self.fetch_jmp_address();
         
-        if self.status.contains(ProcessorStatus::Overflow)
+        if self.status.overflow()
         {
             self.pc = jmp_addr;
         }
@@ -740,22 +751,22 @@ impl Cpu6502 {
 
     fn op_clc(&mut self, addr_mode: AddressingMode)
     {
-        self.status.set(ProcessorStatus::Carry, false);
+        self.status.set_carry(false);
     }
 
     fn op_cld(&mut self, addr_mode: AddressingMode)
     {
-        self.status.set(ProcessorStatus::Decimal, false);
+        self.status.set_decimal(false);
     }
 
     fn op_cli(&mut self, addr_mode: AddressingMode)
     {
-        self.status.set(ProcessorStatus::Interrupt, false);
+        self.status.set_interrupt(false);
     }
 
     fn op_clv(&mut self, addr_mode: AddressingMode)
     {
-        self.status.set(ProcessorStatus::Overflow, false);
+        self.status.set_overflow(false);
     }
 
     fn op_cmp(&mut self, addr_mode: AddressingMode)
@@ -924,7 +935,7 @@ impl Cpu6502 {
 
     fn op_php(&mut self, addr_mode: AddressingMode)
     {
-        let value = self.status.bits | ProcessorStatus::Break.bits;
+        let value = self.status.flags | BIT_B;
 
         self.stack_push(value);
     }
@@ -936,7 +947,7 @@ impl Cpu6502 {
 
     fn op_plp(&mut self, addr_mode: AddressingMode)
     {
-        self.status.bits = (self.status.bits & 0x30) | (self.stack_pop() & 0xCF);
+        self.status.flags = (self.status.flags & 0x30) | (self.stack_pop() & 0xCF);
     }
 
     fn op_rol(&mut self, addr_mode: AddressingMode)
@@ -977,7 +988,7 @@ impl Cpu6502 {
 
     fn op_rti(&mut self, addr_mode: AddressingMode)
     {
-        self.status.bits = (self.status.bits & 0x30) | (self.stack_pop() & 0xCF);
+        self.status.flags = (self.status.flags & 0x30) | (self.stack_pop() & 0xCF);
         let lo = self.stack_pop();
         let hi = self.stack_pop();
 
@@ -995,24 +1006,24 @@ impl Cpu6502 {
     fn op_sbc(&mut self, addr_mode: AddressingMode)
     {
         let addr = self.fetch_operand_address(addr_mode);
-        let value = self.mem_fetch(addr).wrapping_sub(ternary(self.status.contains(ProcessorStatus::Carry), 0u8, 1u8));
+        let value = self.mem_fetch(addr).wrapping_sub(ternary!(self.status.carry(), 0u8, 1u8));
 
         self.alu_sub(value);
     }
 
     fn op_sec(&mut self, addr_mode: AddressingMode)
     {
-        self.status.set(ProcessorStatus::Carry, true);
+        self.status.set_carry(true);
     }
 
     fn op_sed(&mut self, addr_mode: AddressingMode)
     {
-        self.status.set(ProcessorStatus::Decimal, true);
+        self.status.set_decimal(true);
     }
 
     fn op_sei(&mut self, addr_mode: AddressingMode)
     {
-        self.status.set(ProcessorStatus::Interrupt, true);
+        self.status.set_interrupt(true);
     }
 
     fn op_sta(&mut self, addr_mode: AddressingMode)
@@ -1047,8 +1058,8 @@ impl Cpu6502 {
     {
         self.x = self.sp;
 
-        self.status.set(ProcessorStatus::Negative, test_bit(self.x, 7));
-        self.status.set(ProcessorStatus::Zero, self.x == 0);
+        self.status.set_negative(self.x.on(7));
+        self.status.set_zero(self.x == 0);
     }
 
     fn op_txa(&mut self, addr_mode: AddressingMode)
@@ -1081,7 +1092,7 @@ impl Cpu6502 {
         let value = self.mem_fetch(addr);
 
         let result = value.wrapping_add(1) + 
-                ternary(self.status.contains(ProcessorStatus::Carry), 0, 1) // inverse of carry...
+                ternary!(self.status.carry(), 0, 1) // inverse of carry...
             ;
 
         self.alu_sub(result);
@@ -1174,11 +1185,11 @@ impl Cpu6502 {
         let addr = self.fetch_operand_address(addr_mode);
         let mut value = self.mem_fetch(addr);
 
-        let carry = self.status.contains(ProcessorStatus::Carry) ;
+        let carry = self.status.carry() ;
 
         value >>= 1;
-        let new_carry = test_bit(value, 0);
-        self.status.set(ProcessorStatus::Carry, new_carry);
+        let new_carry = value.on(0);
+        self.status.set_carry(new_carry);
         
         if carry {
             value += self.a.wrapping_add(0x80);
@@ -1219,7 +1230,7 @@ impl Cpu6502 {
         let mut result = self.a & value;
         result >>= 1;
         
-        if self.status.contains(ProcessorStatus::Carry) {
+        if self.status.carry() {
             result |= 0b10000000;
         }
 
@@ -1235,7 +1246,7 @@ impl Cpu6502 {
         self.a ^= value >> 1;
         self.alu_status();
 
-        self.status.set(ProcessorStatus::Carry, value & 0x01 != 0);
+        self.status.set_carry(value & 0x01 != 0);
     }
 
     fn op_alr(&mut self, addr_mode: AddressingMode)
@@ -1251,9 +1262,9 @@ impl Cpu6502 {
     {
         let addr = self.fetch_operand_address(addr_mode);
         let mut value = self.mem_fetch(addr);
-        let set_carry = test_bit(value,7);
+        let set_carry = value.on(7);
 
-        if self.status.contains(ProcessorStatus::Carry) {
+        if self.status.carry() {
             value = value.wrapping_add( value.wrapping_add(1) );
         }
         else {
@@ -1262,7 +1273,7 @@ impl Cpu6502 {
 
         self.a &= value;
         self.alu_status();
-        self.status.set(ProcessorStatus::Carry, set_carry);
+        self.status.set_carry(set_carry);
     }
 
     fn op_anc(&mut self, addr_mode: AddressingMode)
@@ -1271,64 +1282,70 @@ impl Cpu6502 {
         let value = self.mem_fetch(addr);
 
         self.a &= value;
-        let hibit = test_bit(self.a, 7);
+        let hibit = self.a.on(7);
         
-        self.status.set(ProcessorStatus::Carry, hibit);
-        self.status.set(ProcessorStatus::Negative, hibit);
+        self.status.set_carry(hibit);
+        self.status.set_negative(hibit);
     }
 
     fn op_slo(&mut self, addr_mode: AddressingMode)
     {
         let addr = self.fetch_operand_address(addr_mode);
         let mut value = self.mem_fetch(addr);
-        let set_carry = test_bit(value,7);
+        let set_carry = value.on(7);
 
         value <<= 1;
         self.a |= value;
 
         self.alu_status();
-        self.status.set(ProcessorStatus::Carry, set_carry);
+        self.status.set_carry(set_carry);
     }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::mapper::Ram;
+
+    fn create_cpu() -> Cpu6502 {
+        let ram = Rc::new(RefCell::new(Ram::new()));
+        Cpu6502::new(ram)
+    }
 
     #[test]
     fn cpu_alu_add() 
     {
-        let mut cpu = Cpu6502::new(Box::new(Bus::new()));   
+        let mut cpu = create_cpu();   
         
         cpu.a = 13;
         cpu.alu_add(211);
         
         assert_eq!(cpu.a, 224);
-        assert_eq!(cpu.status.contains(ProcessorStatus::Carry), false);
+        assert_eq!(cpu.status.carry(), false);
     }
     
     #[test]
     fn cpu_alu_add_carry() 
     {
-        let mut cpu = Cpu6502::new(Box::new(Bus::new()));   
+        let mut cpu = create_cpu();   
         
         cpu.a = 254;
         cpu.alu_add(6);
         
         assert_eq!(cpu.a, 4);
-        assert_eq!(cpu.status.contains(ProcessorStatus::Carry), true);
+        assert_eq!(cpu.status.carry(), true);
     }
     
     #[test]
     fn cpu_alu_add_carry_clear() 
     {
-        let mut cpu = Cpu6502::new(Box::new(Bus::new()));   
+        let mut cpu = create_cpu();   
         
         cpu.a = 254;
         cpu.alu_add(6); // 4 + carry
         cpu.alu_add(6); 
         
         assert_eq!(cpu.a, 10);
-        assert_eq!(cpu.status.contains(ProcessorStatus::Carry), false);
+        assert_eq!(cpu.status.carry(), false);
     }
 }

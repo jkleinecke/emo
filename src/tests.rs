@@ -2,7 +2,7 @@
 
 use crate::system::Nes;
 use crate::common::WORD;
-use crate::cpu6502::{ProcessorStatus};
+use crate::cpu6502::{Status};
 use crate::system::PROGRAM_START;
 
 #[cfg(test)]
@@ -32,8 +32,8 @@ mod test {
 
         assert_eq!(nes.sys_clocks, 9);
         assert_eq!(nes.cpu.a, 0x05);
-        assert_eq!(nes.cpu.status.contains(ProcessorStatus::Zero), false);
-        assert_eq!(nes.cpu.status.contains(ProcessorStatus::Negative), false);
+        assert_eq!(nes.cpu.status.zero(), false);
+        assert_eq!(nes.cpu.status.negative(), false);
     }
 
     #[test]
@@ -48,8 +48,8 @@ mod test {
 
         assert_eq!(nes.sys_clocks, 9);
         assert_eq!(nes.cpu.a, 0x00);
-        assert_eq!(nes.cpu.status.contains(ProcessorStatus::Zero), true);
-        assert_eq!(nes.cpu.status.contains(ProcessorStatus::Negative), false);
+        assert_eq!(nes.cpu.status.zero(), true);
+        assert_eq!(nes.cpu.status.negative(), false);
     }
 
     #[test]
@@ -64,8 +64,8 @@ mod test {
 
         assert_eq!(nes.sys_clocks, 9); 
         assert_eq!(nes.cpu.a, 0xFF);
-        assert_eq!(nes.cpu.status.contains(ProcessorStatus::Zero), false);
-        assert_eq!(nes.cpu.status.contains(ProcessorStatus::Negative), true);
+        assert_eq!(nes.cpu.status.zero(), false);
+        assert_eq!(nes.cpu.status.negative(), true);
     }
 
     #[test]
@@ -81,8 +81,8 @@ mod test {
 
         assert_eq!(nes.sys_clocks, 11); 
         assert_eq!(nes.cpu.a, 0x05);
-        assert_eq!(nes.cpu.status.contains(ProcessorStatus::Zero), false);
-        assert_eq!(nes.cpu.status.contains(ProcessorStatus::Negative), false);
+        assert_eq!(nes.cpu.status.zero(), false);
+        assert_eq!(nes.cpu.status.negative(), false);
     }
 
     #[test]
@@ -100,8 +100,8 @@ mod test {
 
         assert_eq!(nes.sys_clocks, 11); 
         assert_eq!(nes.cpu.x, 0x42);
-        assert_eq!(nes.cpu.status.contains(ProcessorStatus::Zero), false);
-        assert_eq!(nes.cpu.status.contains(ProcessorStatus::Negative), false);
+        assert_eq!(nes.cpu.status.zero(), false);
+        assert_eq!(nes.cpu.status.negative(), false);
     }
 
     #[test]
@@ -126,8 +126,8 @@ mod test {
 
         assert_eq!(nes.sys_clocks, 15); // 15 clocks because no oops 
         assert_eq!(nes.cpu.a, 0x66);
-        assert_eq!(nes.cpu.status.contains(ProcessorStatus::Zero), false);
-        assert_eq!(nes.cpu.status.contains(ProcessorStatus::Negative), false);
+        assert_eq!(nes.cpu.status.zero(), false);
+        assert_eq!(nes.cpu.status.negative(), false);
     }
 
     #[test]
@@ -152,9 +152,9 @@ mod test {
         
         assert_eq!(nes.sys_clocks, 16); // 16 clocks because oops 
         assert_eq!(nes.cpu.a, 0x66);
-        assert_eq!(nes.cpu.status.contains(ProcessorStatus::Carry), false);
-        assert_eq!(nes.cpu.status.contains(ProcessorStatus::Zero), false);
-        assert_eq!(nes.cpu.status.contains(ProcessorStatus::Negative), false);
+        assert_eq!(nes.cpu.status.carry(), false);
+        assert_eq!(nes.cpu.status.zero(), false);
+        assert_eq!(nes.cpu.status.negative(), false);
     }
 
 }

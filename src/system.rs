@@ -5,6 +5,9 @@
 
 use crate::cpu6502::{Cpu6502,PC_START};
 use crate::bus::{Bus};
+use crate::mapper::{Mapper};
+use std::cell::RefCell;
+use std::rc::Rc;
 
 const SYSMEMSIZE: usize = 0xFFFF;
 pub const PROGRAM_START: u16 = 0x600;
@@ -12,19 +15,34 @@ pub const PROGRAM_START: u16 = 0x600;
 pub struct Nes {
     pub sys_clocks:u64,
     pub cpu:Cpu6502,
+    pub bus:Rc<RefCell<Bus>>,
 }
 
 pub trait Clocked {
     fn clock(&mut self);  
 }
 
+impl Mapper for Bus {
+    fn read(&mut self, addr:u16) -> u8 {
+        self.load(addr)
+    }
+
+    fn write(&mut self, addr:u16, value:u8) {
+        self.store(addr, value)
+    }
+}
+
 impl Nes
 {
     pub fn new() -> Self 
     {
+        let bus = Rc::new(RefCell::new(Bus::new()));
+        let cpu = Cpu6502::new(bus.clone());
+
         Nes {
             sys_clocks: 0,
-            cpu: Cpu6502::new(Box::new(Bus::new())),
+            cpu: cpu,
+            bus: bus.clone(),
         }
     }
 
@@ -74,11 +92,11 @@ impl Nes
     pub fn load_program(&mut self, program: &Vec<u8>) 
     {
         // TODO: bounds check?
-        self.cpu.bus.write_ram(PROGRAM_START as usize, program);
+        self.bus.borrow_mut().write_ram(PROGRAM_START as usize, program);
 
         // Now tell the cpu where the program starts
         let start_addr = PROGRAM_START.to_le_bytes();
-        self.cpu.bus.write_ram(PC_START as usize, &start_addr.to_vec());
+        self.bus.borrow_mut().write_ram(PC_START as usize, &start_addr.to_vec());
 
         self.reset();
     }
