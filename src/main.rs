@@ -1,11 +1,8 @@
 
 mod common;
 mod system;
-mod mapper;
 mod bus;
-mod operations;
-mod cpu6502;
-mod tests;
+mod mos6502;
 
 use sdl2::event::Event;
 use sdl2::EventPump;
@@ -20,15 +17,13 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::cmp;
 
-use crate::operations::*;
+use crate::mos6502::*;
 
 use crate::common::WORD;
-use crate::system::Clocked;
-use crate::cpu6502::Cpu6502;
+use crate::common::Clocked;
 
 //use crate::system::Nes;
 //use crate::bus::Bus;
-use crate::mapper::Mapper;
 use sdl2::pixels::Color;
 
 fn color(byte: u8) -> Color {
@@ -52,7 +47,7 @@ struct Snake {
     rng: ThreadRng,
 }
 
-impl Mapper for Snake {
+impl Memory for Snake {
     fn read(&mut self, addr:u16) -> u8 {
         self.ram[addr as usize]
     }
@@ -532,9 +527,10 @@ fn main() {
             map.handle_user_input(&mut event_pump);
         }
 
-        if runner.step()
+        runner.step();
+        //if runner.step()
         {
-            if *(did_clock_cpu.borrow()) == true
+        //    if *(did_clock_cpu.borrow()) == true
             {
                 cpu.ir_cycles = 0;  // just reset back to 0 since we don't care about timing
                 cpu.clock();
@@ -542,7 +538,7 @@ fn main() {
                 let mut map = mapper.borrow_mut();
                 
                 Ui::update(&mut runner, &cpu, &map.ram);
-                //runner.refresh();
+                runner.refresh();
 
                 map.update_rand();
                 if map.update_dirty_texture(&mut texture)

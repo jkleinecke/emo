@@ -4,10 +4,9 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use crate::common::{BitTest, WORD};
-use crate::mapper::Mapper;
-use crate::system::Clocked;
-use crate::operations::*;
+use crate::common::{BitTest,Clocked,WORD};
+
+use super::operations::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::fmt;
@@ -47,9 +46,52 @@ const BIT_U: u8   = 5;
 const BIT_V: u8   = 6;
 const BIT_N: u8   = 7;
 
-#[derive(Default)]
+pub trait Memory {
+    fn read(&mut self, addr:u16) -> u8;
+    fn write(&mut self, addr:u16, value:u8);
+}
+
+pub struct Ram {
+    pub data: [u8;0xFFFF],
+}
+
+impl Memory for Ram {
+    fn read(&mut self, addr:u16) -> u8 {
+        self.data[addr as usize]
+    }
+    fn write(&mut self, addr:u16, value:u8) {
+        self.data[addr as usize] = value
+    }
+}
+
+impl Ram {
+    pub fn new() -> Self {
+        Ram {
+            data: [0;0xFFFF],
+        }
+    }
+}
+
+#[derive(Default,Copy,Clone,PartialEq)]
 pub struct Status {
     pub flags: u8,
+}
+
+#[derive(Copy,Clone)]
+pub struct State {
+    pub a: u8,                      // Accumulator Register
+    pub x: u8,                      // X Register
+    pub y: u8,                      // Y Register
+    pub sp: u8,                     // Stack Pointer
+    pub pc: u16,                        // Internal Program Counter Register
+    
+    pub status: Status,    // Status Register
+
+    // internal registers
+    pub ir_cycles: u8,
+    pub ir: u8,                         // active instruction register
+    
+    halted: bool,                   // fake register to show that we should be done
 }
 
 impl fmt::Debug for Status {
@@ -83,6 +125,23 @@ impl fmt::Display for Status {
 impl Status {
     pub fn initial() -> Self {
         Status { flags: 0x34 }
+    }
+   
+    pub fn from_str(status_str:&str) -> Self
+    {
+        let mut ret = Status {flags: (1 >> BIT_U)};
+        let mut it = status_str.chars();
+
+        ret.set_negative(it.next() == Some('N'));
+        ret.set_overflow(it.next() == Some('V'));
+        it.next();  // don't care about unused
+        ret.set_break(it.next() == Some('B'));
+        ret.set_decimal(it.next() == Some('D'));
+        ret.set_interrupt(it.next() == Some('I'));
+        ret.set_zero(it.next() == Some('Z'));
+        ret.set_carry(it.next() == Some('C'));
+        
+        ret
     }
 
     pub fn carry(&self) -> bool { self.flags.on(BIT_C) }
@@ -118,11 +177,7 @@ pub struct Cpu6502 {
     halted: bool,                   // fake register to show that we should be done
 
     // bus module
-    pub mapper: Rc<RefCell<dyn Mapper>>,
-
-    // outgoing signals
-    pub oe1:bool,                   // -> Controller 1 dump
-    pub oe2:bool,                   // -> Controller 2 dump
+    pub memory_bus: Rc<RefCell<dyn Memory>>,
 }
 
 impl Clocked for Cpu6502
@@ -154,7 +209,7 @@ impl Clocked for Cpu6502
 }
 
 impl Cpu6502 {
-    pub fn new(mapper: Rc<RefCell<dyn Mapper>>) -> Self {
+    pub fn new(memory_bus: Rc<RefCell<dyn Memory>>) -> Self {
         Cpu6502 {
             a: 0,
             x: 0,
@@ -169,10 +224,7 @@ impl Cpu6502 {
 
             halted: false,
 
-            mapper,
-            
-            oe1:false,
-            oe2:false,
+            memory_bus,
         }
     }
 
@@ -183,7 +235,7 @@ impl Cpu6502 {
         self.stack_push(self.pc.lo());
         
         /* push status on stack, */
-        let status = self.status.flags | BIT_U;
+        let status = self.status.flags | (1u8 << BIT_U);
         
         //--TODO!
         /*** At this point, the signal status determines which interrupt vector is used ***/
@@ -207,6 +259,20 @@ impl Cpu6502 {
     pub fn did_halt(&self) -> bool {
         self.halted
     }
+
+    pub fn copy_state(&self) -> State {
+        State {
+            a: self.a,
+            x: self.x,
+            y: self.y,
+            pc: self.pc,
+            sp: self.sp,
+            status: self.status,
+            ir_cycles: self.ir_cycles,
+            ir: self.ir,
+            halted: self.halted,
+        }
+    }
     
     // I/O Memory Bus
 
@@ -215,22 +281,22 @@ impl Cpu6502 {
     }
 
     fn mem_fetch(&mut self, addr: u16) -> u8 {
-        self.mapper.borrow_mut().read(addr)
+        self.memory_bus.borrow_mut().read(addr)
     }
 
     fn mem_store(&mut self, addr: u16, v: u8) {
-        self.mapper.borrow_mut().write(addr, v)
+        self.memory_bus.borrow_mut().write(addr, v)
     }
 
     fn mem_fetch16(&mut self, addr: u16) -> u16 {
-        let mut bus = self.mapper.borrow_mut();
+        let mut bus = self.memory_bus.borrow_mut();
         let lo = bus.read(addr);
         let hi = bus.read(addr + 1);
         u16::make(hi, lo)
     }
 
     fn mem_store16(&mut self, addr: u16, v: u16) {
-        let mut bus = self.mapper.borrow_mut();
+        let mut bus = self.memory_bus.borrow_mut();
         bus.write(addr, v.lo());
         bus.write(addr+1, v.hi());
     }
@@ -238,7 +304,7 @@ impl Cpu6502 {
     fn stack_push(&mut self, v:u8) 
     {
         let addr = STACK_BASE + self.sp as u16;    // calc the stack pointer address
-        self.mapper.borrow_mut().write(addr, v) ;               // queue up the bus write
+        self.memory_bus.borrow_mut().write(addr, v) ;               // queue up the bus write
         self.sp -= 1;                       // decrement the stack pointer
     }
 
@@ -246,7 +312,7 @@ impl Cpu6502 {
     {
         self.sp += 1;                       // increment the stack pointer
         let addr = STACK_BASE + self.sp as u16;    // calc the stack pointer address
-        self.mapper.borrow_mut().read(addr)                   // bus read
+        self.memory_bus.borrow_mut().read(addr)                   // bus read
     }
 
     // Status Flags
@@ -388,7 +454,10 @@ impl Cpu6502 {
             AddressingMode::Relative => {
                 let offset = self.mem_fetch(self.pc);
                 
-                let addr = self.pc + offset as u16;
+                let addr = match offset.bit(7) {      // offset can be negative
+                    true => self.pc - !offset as u16, // if negative, subtract the inverse (two's complement)  
+                    false => self.pc + offset as u16, // otherwise just add the offset
+                };
 
                 self.inc_pc();
                 addr
@@ -565,8 +634,7 @@ impl Cpu6502 {
         let value = self.mem_fetch(addr);
         
         self.a = self.alu_add(self.a, value);
-        self.a = self.alu_add(self.a, 0);       // invoke 2nd time with 0 to catch the carry bit
-
+        
         self.update_status(self.a);
     }
 
@@ -1231,8 +1299,7 @@ impl Cpu6502 {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::mapper::Ram;
-
+    
     fn create_cpu() -> Cpu6502 {
         let ram = Rc::new(RefCell::new(Ram::new()));
         Cpu6502::new(ram)
@@ -1250,6 +1317,18 @@ mod test {
     }
     
     #[test]
+    fn cpu_alu_sub() 
+    {
+        let mut cpu = create_cpu();   
+        cpu.status.set_carry(true);
+
+        let result = cpu.alu_sub(211, 10);
+        
+        assert_eq!(result, 201);
+        assert_eq!(cpu.status, Status::from_str("nv-BdizC"));
+    }
+
+    #[test]
     fn cpu_alu_add_carry() 
     {
         let mut cpu = create_cpu();   
@@ -1259,7 +1338,19 @@ mod test {
         assert_eq!(result, 4);
         assert_eq!(cpu.status.carry(), true);
     }
-    
+
+    #[test]
+    fn cpu_alu_sub_carry() 
+    {
+        let mut cpu = create_cpu();   
+        cpu.status.set_carry(true);
+
+        let result = cpu.alu_sub(10, 20);
+        
+        assert_eq!(result as i8, -10);
+        assert_eq!(cpu.status, Status::from_str("nv-Bdizc"));
+    }
+
     #[test]
     fn cpu_alu_add_carry_clear() 
     {

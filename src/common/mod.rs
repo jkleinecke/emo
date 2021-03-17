@@ -55,6 +55,10 @@ impl WORD for u16 {
     }
 }
 
+pub trait Clocked {
+    fn clock(&mut self);  
+}
+
 // pub trait Savable {
 //     fn save(&self, fh: &mut Write);
 //     fn load(&mut self, fh: &mut Read);

@@ -3,9 +3,9 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use crate::cpu6502::{Cpu6502,PC_START};
+use crate::mos6502::{Cpu6502,PC_START,Memory};
+use crate::common::Clocked;
 use crate::bus::{Bus};
-use crate::mapper::{Mapper};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -18,11 +18,8 @@ pub struct Nes {
     pub bus:Rc<RefCell<Bus>>,
 }
 
-pub trait Clocked {
-    fn clock(&mut self);  
-}
 
-impl Mapper for Bus {
+impl Memory for Bus {
     fn read(&mut self, addr:u16) -> u8 {
         self.load(addr)
     }
