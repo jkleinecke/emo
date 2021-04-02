@@ -68,7 +68,7 @@ mod test {
     #[test]
     fn cpu_op_lda_abs() 
     {
-        let addr = 0x8003;
+        let addr = 0x0603;
         let mut cpu = new_cpu(&vec![0xad, addr.lo(), addr.hi(), 0x05]);
         
         run_instr(&mut cpu, 1);
@@ -413,5 +413,139 @@ mod test {
         assert_eq!(cpu.sp, 0xfd);
         assert_eq!(cpu.pc, 0x0612);
         assert_eq!(cpu.status, Status::from_str("nv-BdiZC"));
+    }
+
+    #[test]
+    fn ez_cmp()
+    {
+        // Address  Hexdump   Dissassembly
+        // -------------------------------
+        // $0600    a9 01     LDA #$01
+        // $0602    85 02     STA $02
+        // $0604    a9 77     LDA #$77
+        // $0606    c9 77     CMP #$77
+        // $0608    a9 04     LDA #$04
+        // $060a    24 02     BIT $02
+        // $060c    d0 06     BNE $0614
+        // $060e    a9 01     LDA #$01
+        // $0610    85 02     STA $02
+        // $0612    00        BRK 
+        // $0613    00        BRK 
+        // $0614    00        BRK 
+        let mut cpu = new_cpu(&vec![ 0xa9,0x01,0x85,0x02,0xa9,0x77,0xc9,0x77,0xa9,0x04,0x24,0x02,
+                                     0xd0,0x06,0xa9,0x01,0x85,0x02,0x00,0x00,0x00 ]);
+        
+        run_until_break(&mut cpu);
+
+        assert_eq!(cpu.a, 0x01);
+        assert_eq!(cpu.x, 0x00);
+        assert_eq!(cpu.y, 0x00);
+        assert_eq!(cpu.sp, 0xff);
+        assert_eq!(cpu.pc, 0x0612);
+        assert_eq!(cpu.status, Status::from_str("nv-BdizC"));
+
+        let mut mem = cpu.memory_bus.borrow_mut();
+        assert_eq!(mem.read(0x0002), 0x01);
+        
+    }
+
+    
+    #[test]
+    fn ez_beq_relative_addressing()
+    {
+        // Address  Hexdump   Dissassembly
+        // -------------------------------
+        // $0600    a2 01     LDX #$01
+        // $0602    e8        INX 
+        // $0603    e0 02     CPX #$02
+        // $0605    f0 fb     BEQ $0602
+        // $0607    e0 03     CPX #$03
+        // $0609    f0 05     BEQ $0610
+        // $060b    00        BRK 
+        // $060c    00        BRK 
+        // $060d    00        BRK 
+        // $060e    00        BRK 
+        // $060f    00        BRK 
+        // $0610    a9 42     LDA #$42 
+        let mut cpu = new_cpu(&vec![ 0xa2,0x01,0xe8,0xe0,0x02,0xf0,0xfb,0xe0,0x03,0xf0,0x05,0x00,
+                                     0x00,0x00,0x00,0x00,0xa9,0x42 ]);
+        
+        run_until_break(&mut cpu);
+
+        assert_eq!(cpu.a, 0x42);
+        assert_eq!(cpu.x, 0x03);
+        assert_eq!(cpu.y, 0x00);
+        assert_eq!(cpu.sp, 0xff);
+        assert_eq!(cpu.pc, 0x0612);
+        assert_eq!(cpu.status, Status::from_str("nv-BdizC"));
+    }
+
+    #[test]
+    fn ez_snake_dir()
+    {
+        // Address  Hexdump   Dissassembly
+        // -------------------------------
+        // $0600    a9 02     LDA #$02
+        // $0602    85 02     STA $02
+        // $0604    a9 77     LDA #$77
+        // $0606    85 ff     STA $ff
+        // $0608    20 0c 06  JSR $060c
+        // $060b    00        BRK 
+        // $060c    a5 ff     LDA $ff
+        // $060e    c9 77     CMP #$77
+        // $0610    f0 0d     BEQ $061f
+        // $0612    c9 64     CMP #$64
+        // $0614    f0 14     BEQ $062a
+        // $0616    c9 73     CMP #$73
+        // $0618    f0 1b     BEQ $0635
+        // $061a    c9 61     CMP #$61
+        // $061c    f0 22     BEQ $0640
+        // $061e    60        RTS 
+        // $061f    a9 04     LDA #$04
+        // $0621    24 02     BIT $02
+        // $0623    d0 26     BNE $064b
+        // $0625    a9 01     LDA #$01
+        // $0627    85 02     STA $02
+        // $0629    60        RTS 
+        // $062a    a9 08     LDA #$08
+        // $062c    24 02     BIT $02
+        // $062e    d0 1b     BNE $064b
+        // $0630    a9 02     LDA #$02
+        // $0632    85 02     STA $02
+        // $0634    60        RTS 
+        // $0635    a9 01     LDA #$01
+        // $0637    24 02     BIT $02
+        // $0639    d0 10     BNE $064b
+        // $063b    a9 04     LDA #$04
+        // $063d    85 02     STA $02
+        // $063f    60        RTS 
+        // $0640    a9 02     LDA #$02
+        // $0642    24 02     BIT $02
+        // $0644    d0 05     BNE $064b
+        // $0646    a9 08     LDA #$08
+        // $0648    85 02     STA $02
+        // $064a    60        RTS 
+        // $064b    60        RTS 
+        let mut cpu = new_cpu(&vec![ 
+            0xa9,0x02,0x85,0x02,0xa9,0x77,0x85,0xff,0x20,0x0c,0x06,0x00,0xa5,0xff,0xc9,0x77, 
+            0xf0,0x0d,0xc9,0x64,0xf0,0x14,0xc9,0x73,0xf0,0x1b,0xc9,0x61,0xf0,0x22,0x60,0xa9, 
+            0x04,0x24,0x02,0xd0,0x26,0xa9,0x01,0x85,0x02,0x60,0xa9,0x08,0x24,0x02,0xd0,0x1b, 
+            0xa9,0x02,0x85,0x02,0x60,0xa9,0x01,0x24,0x02,0xd0,0x10,0xa9,0x04,0x85,0x02,0x60, 
+            0xa9,0x02,0x24,0x02,0xd0,0x05,0xa9,0x08,0x85,0x02,0x60,0x60,0x0
+            ]);
+
+    
+        run_until_break(&mut cpu);
+
+        assert_eq!(cpu.a, 0x01);
+        assert_eq!(cpu.x, 0x00);
+        assert_eq!(cpu.y, 0x00);
+        assert_eq!(cpu.sp, 0xff);
+        assert_eq!(cpu.pc, 0x060b);
+        assert_eq!(cpu.status, Status::from_str("nv-BdizC"));
+
+        let mut mem = cpu.memory_bus.borrow_mut();
+        assert_eq!(mem.read(0x0002), 0x01);
+        assert_eq!(mem.read(0x00FF), 0x77);
     }
 }

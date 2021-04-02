@@ -1,20 +1,22 @@
 #![allow(unused_imports)]
 #![allow(non_upper_case_globals)]
+#![allow(non_camel_case_types)]
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-
-use std::cmp::Eq;
-use std::convert::From;
-use std::default::Default;
-use std::fmt::{
+pub use std::cmp::Eq;
+pub use std::convert::From;
+pub use std::default::Default;
+pub use std::fmt::{
 	Binary,
 	Debug,
 	Display,
 	LowerHex,
 	UpperHex,
+    Formatter,
+    Result,
 };
-use std::ops::{
+pub use std::ops::{
 	Not,
 	BitAnd,
 	BitAndAssign,
@@ -25,33 +27,36 @@ use std::ops::{
 	ShrAssign,
 };
 
+pub type Byte = u8;
+pub type Word = u16;
+
 pub trait WORD {
-    fn hi(&self) -> u8;
-    fn lo(&self) -> u8;
-    fn make(hi:u8, lo:u8) -> u16;
-    fn set_hi(&mut self, hi:u8);
-    fn set_lo(&mut self, lo:u8); 
+    fn hi(&self) -> Byte;
+    fn lo(&self) -> Byte;
+    fn make(hi:Byte, lo:Byte) -> Word;
+    fn set_hi(&mut self, hi:Byte);
+    fn set_lo(&mut self, lo:Byte); 
 }
 
-impl WORD for u16 {
-    fn hi(&self) -> u8 {
-        ((self >> 8) & 0xFF) as u8
+impl WORD for Word {
+    fn hi(&self) -> Byte {
+        ((self >> 8) & 0xFF) as Byte
     }
-    fn lo(&self) -> u8 {
-        (self & 0xFF) as u8
+    fn lo(&self) -> Byte {
+        (self & 0xFF) as Byte
     }
-    fn make(hi:u8, lo:u8) -> u16
+    fn make(hi:Byte, lo:Byte) -> Word
     {
-        return ((hi as u16) << 8) | (lo as u16);
+        return ((hi as Word) << 8) | (lo as Word);
     }
-    fn set_hi(&mut self, hi:u8)
+    fn set_hi(&mut self, hi:Byte)
     {
-        *self = ((hi as u16) << 8) | (self.lo() as u16) as u16;
+        *self = ((hi as Word) << 8) | (self.lo() as Word) as Word;
     }
 
-    fn set_lo(&mut self, lo:u8)
+    fn set_lo(&mut self, lo:Byte)
     {
-        *self = ((self.hi() as u16) << 8) | (lo as u16) as u16;
+        *self = ((self.hi() as Word) << 8) | (lo as Word) as Word;
     }
 }
 
@@ -74,7 +79,6 @@ pub trait Clocked {
 //         x.clock();
 //     }
 // }
-
 
 pub trait BitTest:
     Binary
@@ -119,7 +123,7 @@ pub trait BitTest:
     
     fn bit(&self, place:u8) -> bool
     {
-        (*self >> place) & Self::from(1) == Self::from(1)
+        ((*self >> place) & Self::from(1)) == Self::from(1)
     }
 
     fn on(&self, place:u8) -> bool
@@ -137,4 +141,4 @@ pub trait BitTest:
     }
 }
 
-impl BitTest for u8 {}
+impl BitTest for Byte {}

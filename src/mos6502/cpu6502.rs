@@ -4,7 +4,7 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use crate::common::{BitTest,Clocked,WORD};
+use crate::common::{BitTest,Clocked,WORD,Byte,Word};
 
 use super::operations::*;
 use std::cell::RefCell;
@@ -29,12 +29,12 @@ macro_rules! ternary {
  * 
  ***********************************************************/
 
-pub const PC_START: u16 = 0xFFFC;
+pub const PC_START: Word = 0xFFFC;
 
-const STACK_BASE: u16 = 0x100;
-const STACK_START: u8 = 0xFF;
+const STACK_BASE: Word = 0x100;
+const STACK_START: Byte = 0xFF;
 
-const OP_BRK: u8 = 0x00;
+const OP_BRK: Byte = 0x00;
 
 const BIT_C: u8   = 0;
 const BIT_Z: u8   = 1;
@@ -47,19 +47,19 @@ const BIT_V: u8   = 6;
 const BIT_N: u8   = 7;
 
 pub trait Memory {
-    fn read(&mut self, addr:u16) -> u8;
-    fn write(&mut self, addr:u16, value:u8);
+    fn read(&mut self, addr:Word) -> Byte;
+    fn write(&mut self, addr:Word, value:Byte);
 }
 
 pub struct Ram {
-    pub data: [u8;0xFFFF],
+    pub data: [Byte;0xFFFF],
 }
 
 impl Memory for Ram {
-    fn read(&mut self, addr:u16) -> u8 {
+    fn read(&mut self, addr:Word) -> Byte {
         self.data[addr as usize]
     }
-    fn write(&mut self, addr:u16, value:u8) {
+    fn write(&mut self, addr:Word, value:Byte) {
         self.data[addr as usize] = value
     }
 }
@@ -72,27 +72,36 @@ impl Ram {
     }
 }
 
+
 #[derive(Default,Copy,Clone,PartialEq)]
 pub struct Status {
-    pub flags: u8,
+    pub flags: Byte,
 }
 
 #[derive(Copy,Clone)]
 pub struct State {
-    pub a: u8,                      // Accumulator Register
-    pub x: u8,                      // X Register
-    pub y: u8,                      // Y Register
-    pub sp: u8,                     // Stack Pointer
-    pub pc: u16,                        // Internal Program Counter Register
+    pub a: Byte,                      // Accumulator Register
+    pub x: Byte,                      // X Register
+    pub y: Byte,                      // Y Register
+    pub sp: Byte,                     // Stack Pointer
+    pub pc: Word,                        // Internal Program Counter Register
     
     pub status: Status,    // Status Register
 
     // internal registers
     pub ir_cycles: u8,
-    pub ir: u8,                         // active instruction register
+    pub ir: Byte,                         // active instruction register
     
     halted: bool,                   // fake register to show that we should be done
 }
+
+
+impl fmt::Display for State {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "PC: {:#06x} SP: {:#04x} A: {:#04x} X: {:#04x} Y: {:#04x} P: {} IR: {:#04x}", self.pc, self.sp, self.a, self.x, self.y, self.status, self.ir)
+    }
+}
+
 
 impl fmt::Debug for Status {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -129,7 +138,7 @@ impl Status {
    
     pub fn from_str(status_str:&str) -> Self
     {
-        let mut ret = Status {flags: (1 >> BIT_U)};
+        let mut ret = Status {flags: (1u8 << BIT_U)};
         let mut it = status_str.chars();
 
         ret.set_negative(it.next() == Some('N'));
@@ -162,17 +171,17 @@ impl Status {
 }
 
 pub struct Cpu6502 {
-    pub a: u8,                      // Accumulator Register
-    pub x: u8,                      // X Register
-    pub y: u8,                      // Y Register
-    pub sp: u8,                     // Stack Pointer
-    pub pc: u16,                        // Internal Program Counter Register
+    pub a: Byte,                      // Accumulator Register
+    pub x: Byte,                      // X Register
+    pub y: Byte,                      // Y Register
+    pub sp: Byte,                     // Stack Pointer
+    pub pc: Word,                        // Internal Program Counter Register
     
     pub status: Status,    // Status Register
 
     // internal registers
-    pub ir_cycles: u8,
-    pub ir: u8,                         // active instruction register
+    pub ir_cycles: Byte,
+    pub ir: Byte,                         // active instruction register
     
     halted: bool,                   // fake register to show that we should be done
 
@@ -280,44 +289,44 @@ impl Cpu6502 {
         self.pc = self.pc.wrapping_add(1);
     }
 
-    fn mem_fetch(&mut self, addr: u16) -> u8 {
+    fn mem_fetch(&mut self, addr: Word) -> Byte {
         self.memory_bus.borrow_mut().read(addr)
     }
 
-    fn mem_store(&mut self, addr: u16, v: u8) {
+    fn mem_store(&mut self, addr: Word, v: Byte) {
         self.memory_bus.borrow_mut().write(addr, v)
     }
 
-    fn mem_fetch16(&mut self, addr: u16) -> u16 {
+    fn mem_fetch16(&mut self, addr: Word) -> Word {
         let mut bus = self.memory_bus.borrow_mut();
         let lo = bus.read(addr);
         let hi = bus.read(addr + 1);
-        u16::make(hi, lo)
+        Word::make(hi, lo)
     }
 
-    fn mem_store16(&mut self, addr: u16, v: u16) {
+    fn mem_store16(&mut self, addr: Word, v: Word) {
         let mut bus = self.memory_bus.borrow_mut();
         bus.write(addr, v.lo());
         bus.write(addr+1, v.hi());
     }
 
-    fn stack_push(&mut self, v:u8) 
+    fn stack_push(&mut self, v:Byte) 
     {
-        let addr = STACK_BASE + self.sp as u16;    // calc the stack pointer address
+        let addr = STACK_BASE + self.sp as Word;    // calc the stack pointer address
         self.memory_bus.borrow_mut().write(addr, v) ;               // queue up the bus write
         self.sp -= 1;                       // decrement the stack pointer
     }
 
-    fn stack_pop(&mut self) -> u8
+    fn stack_pop(&mut self) -> Byte
     {
         self.sp += 1;                       // increment the stack pointer
-        let addr = STACK_BASE + self.sp as u16;    // calc the stack pointer address
+        let addr = STACK_BASE + self.sp as Word;    // calc the stack pointer address
         self.memory_bus.borrow_mut().read(addr)                   // bus read
     }
 
     // Status Flags
 
-    fn update_status(&mut self, result:u8)
+    fn update_status(&mut self, result:Byte)
     {
         self.status.set_zero(result == 0);
         self.status.set_negative(result.on(7));
@@ -327,7 +336,7 @@ impl Cpu6502 {
      * Memory Addressing Modes
      **************************/
 
-    fn fetch_operand_address(&mut self, mode: AddressingMode) -> u16
+    fn fetch_operand_address(&mut self, mode: AddressingMode) -> Word
     {
         //--TODO: Handle oops cycle when we cross a page..
 
@@ -346,29 +355,29 @@ impl Cpu6502 {
             AddressingMode::ZeroPage => {
                 let lo = self.mem_fetch(self.pc);
                 self.inc_pc();
-                lo as u16
+                lo as Word
             }
             AddressingMode::ZeroPageX => {
                 let lo = self.mem_fetch(self.pc);
                 self.inc_pc();
-                lo.wrapping_add(self.x) as u16
+                lo.wrapping_add(self.x) as Word
             }
             AddressingMode::ZeroPageY => {
                 let lo = self.mem_fetch(self.pc);
                 self.inc_pc();
-                lo.wrapping_add(self.y) as u16
+                lo.wrapping_add(self.y) as Word
             }
             AddressingMode::Absolute => {
                 let lo = self.mem_fetch(self.pc);
                 self.inc_pc();
                 let hi = self.mem_fetch(self.pc);     // just making sure the registers are used properly here
                 self.inc_pc();
-                u16::make(hi, lo)
+                Word::make(hi, lo)
             }
             AddressingMode::AbsoluteX => {
                 let ptr = self.mem_fetch(self.pc);
                 self.inc_pc();
-                let base = ptr as u16 + self.x as u16;
+                let base = ptr as Word + self.x as Word;
                 let carry = base.hi() > 0;
                 
                 let mut hi = self.mem_fetch(self.pc);
@@ -383,12 +392,12 @@ impl Cpu6502 {
                     self.ir_cycles += 1;    // add the oops cycle into it
                 }
 
-                u16::make(hi, base.lo())
+                Word::make(hi, base.lo())
             }
             AddressingMode::AbsoluteY => {
                 let ptr = self.mem_fetch(self.pc);
                 self.inc_pc();
-                let base = ptr as u16 + self.y as u16;
+                let base = ptr as Word + self.y as Word;
                 let carry = base.hi() > 0;
                 
                 let mut hi = self.mem_fetch(self.pc);
@@ -403,7 +412,7 @@ impl Cpu6502 {
                     self.ir_cycles += 1;    // add the oops cycle into it
                 }
 
-                u16::make(hi, base.lo())
+                Word::make(hi, base.lo())
             }
              AddressingMode::Indirect => {
                 // Only used by the JMP instruction on the 6502
@@ -412,31 +421,31 @@ impl Cpu6502 {
                 let base_hi = self.mem_fetch(self.pc);
                 self.inc_pc();
 
-                let lo = self.mem_fetch(u16::make(base_hi,base_lo));
+                let lo = self.mem_fetch(Word::make(base_hi,base_lo));
                 
                 // There is a bug in the 6502 that causes this addressing mode to work improperly in some cases.
                 // If the jump operation is accessing the last byte of a page (ie, $xxFF), then the high byte will
                 // be accessed at $00 of that page, instead of $00 of the next page.
                 // eg, JMP ($21FF) will grab the low byte from $21FF and the high byte from $2100 instead of $2200 as
                 // would be expected. 
-                let hi = self.mem_fetch(u16::make(base_hi,base_lo.wrapping_add(1)));  
-                u16::make(hi,lo)
+                let hi = self.mem_fetch(Word::make(base_hi,base_lo.wrapping_add(1)));  
+                Word::make(hi,lo)
             },
             AddressingMode::IndirectX => {
                 let base = self.mem_fetch(self.pc);
                 self.inc_pc();
                 let addr = base.wrapping_add(self.x);
 
-                let lo = self.mem_fetch(addr as u16);
-                let hi = self.mem_fetch(addr as u16 + 1);
-                u16::make(hi, lo)
+                let lo = self.mem_fetch(addr as Word);
+                let hi = self.mem_fetch(addr as Word + 1);
+                Word::make(hi, lo)
             }
             AddressingMode::IndirectY => {
                 let ptr = self.mem_fetch(self.pc);
                 self.inc_pc();
 
-                let base = self.mem_fetch(ptr as u16) as u16 + self.y as u16;
-                let mut hi = self.mem_fetch(ptr as u16 + 1);
+                let base = self.mem_fetch(ptr as Word) as Word + self.y as Word;
+                let mut hi = self.mem_fetch(ptr as Word + 1);
 
                 let carry = base.hi() > 0;
 
@@ -449,14 +458,14 @@ impl Cpu6502 {
                     self.ir_cycles += 1;     // add the oops cycle into it
                 }
 
-                u16::make(hi, base.lo())
+                Word::make(hi, base.lo())
             },
             AddressingMode::Relative => {
                 let offset = self.mem_fetch(self.pc);
                 
                 let addr = match offset.bit(7) {      // offset can be negative
-                    true => self.pc - !offset as u16, // if negative, subtract the inverse (two's complement)  
-                    false => self.pc + offset as u16, // otherwise just add the offset
+                    true => self.pc - !offset as Word, // if negative, subtract the inverse (two's complement)  
+                    false => self.pc + offset as Word + 1, // otherwise just add the offset
                 };
 
                 self.inc_pc();
@@ -470,7 +479,7 @@ impl Cpu6502 {
      * ALU operations
      *************************/
 
-    fn alu_add(&mut self, a:u8, b:u8) -> u8
+    fn alu_add(&mut self, a:Byte, b:Byte) -> Byte
     {
         // a rather ambitious attempt to generalize the alu operations with
         // the status flag updates
@@ -484,7 +493,7 @@ impl Cpu6502 {
         //  another carry was generated
         //  signed overflow occurred if the values are interpreted as signed
 
-        let result = a as u16 + b as u16 + self.status.carry() as u16;
+        let result = a as Word + b as Word + self.status.carry() as Word;
         let signed_overflow = !(a ^ b) & (a ^ result.lo());
 
         self.status.set_carry(result.hi() > 0);
@@ -493,7 +502,7 @@ impl Cpu6502 {
         result.lo()
     }
 
-    fn alu_sub(&mut self, a:u8, b:u8) -> u8
+    fn alu_sub(&mut self, a:Byte, b:Byte) -> Byte
     {
         // further ambitious bullshit from me...
         // two's complement based subtraction is 
@@ -502,21 +511,21 @@ impl Cpu6502 {
         self.alu_add(a, !b)
     }
 
-    fn alu_lsr(&mut self, a:u8) -> u8
+    fn alu_lsr(&mut self, a:Byte) -> Byte
     {
         self.status.set_carry(a.on(0));
 
         a >> 1
     }
 
-    fn alu_asl(&mut self, a:u8) -> u8
+    fn alu_asl(&mut self, a:Byte) -> Byte
     {
         self.status.set_carry(a.on(7));
 
         a << 1
     }
 
-    fn alu_rol(&mut self, a:u8) -> u8
+    fn alu_rol(&mut self, a:Byte) -> Byte
     {
         let carry = self.status.carry() ;
         self.status.set_carry(a.on(7));
@@ -524,7 +533,7 @@ impl Cpu6502 {
         (a << 1).wrapping_add(ternary!(carry,1,0))
     }
 
-    fn alu_ror(&mut self, a:u8) -> u8
+    fn alu_ror(&mut self, a:Byte) -> Byte
     {
         let carry = self.status.carry() ;
 
@@ -533,7 +542,7 @@ impl Cpu6502 {
         (a >> 1).wrapping_add(ternary!(carry,0x80,0))
     }
 
-    fn alu_compare(&mut self, v1: u8, v2: u8)
+    fn alu_compare(&mut self, v1: Byte, v2: Byte)
     {
         self.status.set_negative(v1.wrapping_sub(v2).on(7));
         self.status.set_zero(v1 == v2);
@@ -919,20 +928,20 @@ impl Cpu6502 {
 
     fn op_lsr(&mut self, addr_mode: AddressingMode)
     {
-        if addr_mode == AddressingMode::Accumulator
-        {
-            self.a = self.alu_lsr(self.a);
-            self.update_status(self.a);
-        }
-        else
-        {
-            let addr = self.fetch_operand_address(addr_mode);
-            let value = self.mem_fetch(addr);
-
-            let result = self.alu_lsr(value);
-            self.update_status(result);
-
-            self.mem_store(addr, result);
+        match addr_mode {
+            AddressingMode::Accumulator | AddressingMode::Implicit => {
+                self.a = self.alu_lsr(self.a);
+                self.update_status(self.a);
+            },
+            _ => {
+                let addr = self.fetch_operand_address(addr_mode);
+                let value = self.mem_fetch(addr);
+    
+                let result = self.alu_lsr(value);
+                self.update_status(result);
+    
+                self.mem_store(addr, result);
+            }
         }
     }
 
@@ -1017,7 +1026,7 @@ impl Cpu6502 {
         let lo = self.stack_pop();
         let hi = self.stack_pop();
 
-        self.pc = u16::make(hi, lo);
+        self.pc = Word::make(hi, lo);
     }
 
     fn op_rts(&mut self, addr_mode: AddressingMode)
@@ -1025,7 +1034,7 @@ impl Cpu6502 {
         let lo = self.stack_pop();
         let hi = self.stack_pop();
 
-        self.pc = u16::make(hi, lo).wrapping_add(1);
+        self.pc = Word::make(hi, lo).wrapping_add(1);
     }
 
     fn op_sbc(&mut self, addr_mode: AddressingMode)
@@ -1034,7 +1043,8 @@ impl Cpu6502 {
         let value = self.mem_fetch(addr).wrapping_sub(ternary!(self.status.carry(), 0u8, 1u8));
 
         self.a = self.alu_sub(self.a, value);
-        self.a = self.alu_sub(self.a, 0);       // 2nd time will handle the carry 
+        
+        self.update_status(self.a);
     }
 
     fn op_sec(&mut self, addr_mode: AddressingMode)
@@ -1174,7 +1184,7 @@ impl Cpu6502 {
         let mut value = self.a & self.x;
         value &= addr.hi().wrapping_add(1);
 
-        self.mem_store(addr.wrapping_add(self.y as u16), value);
+        self.mem_store(addr.wrapping_add(self.y as Word), value);
     }
 
     fn op_sax(&mut self, addr_mode: AddressingMode)
@@ -1202,7 +1212,7 @@ impl Cpu6502 {
         let addr = self.fetch_operand_address(addr_mode);
         let result = self.x & (addr.hi().wrapping_add(1));
 
-        self.mem_store(addr.wrapping_add(self.y as u16), result);
+        self.mem_store(addr.wrapping_add(self.y as Word), result);
     }
 
     fn op_rra(&mut self, addr_mode: AddressingMode)
@@ -1222,7 +1232,7 @@ impl Cpu6502 {
         self.sp = self.a & self.x;
         let result = self.sp & (addr.hi().wrapping_add(1));
 
-        self.mem_store(addr.wrapping_add(self.y as u16), result);
+        self.mem_store(addr.wrapping_add(self.y as Word), result);
     }
 
     fn op_shy(&mut self, addr_mode: AddressingMode)
@@ -1231,7 +1241,7 @@ impl Cpu6502 {
 
         let result = self.y.wrapping_add(addr.hi().wrapping_add(1));
 
-        self.mem_store(addr.wrapping_add(self.x as u16), result);
+        self.mem_store(addr.wrapping_add(self.x as Word), result);
     }
 
     fn op_arr(&mut self, addr_mode: AddressingMode)
@@ -1325,7 +1335,7 @@ mod test {
         let result = cpu.alu_sub(211, 10);
         
         assert_eq!(result, 201);
-        assert_eq!(cpu.status, Status::from_str("nv-BdizC"));
+        assert_eq!(cpu.status, Status::from_str("nv-BdIzC"));
     }
 
     #[test]
@@ -1348,7 +1358,7 @@ mod test {
         let result = cpu.alu_sub(10, 20);
         
         assert_eq!(result as i8, -10);
-        assert_eq!(cpu.status, Status::from_str("nv-Bdizc"));
+        assert_eq!(cpu.status.flags, Status::from_str("nv-BdIzc").flags);
     }
 
     #[test]

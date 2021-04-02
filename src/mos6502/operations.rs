@@ -1,6 +1,7 @@
 #![allow(non_upper_case_globals)]
 
 use std::fmt;
+use crate::common::WORD;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Operation {
@@ -25,7 +26,7 @@ impl fmt::Display for Operation
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum AddressingMode {
     Immediate = 0,
     ZeroPage = 1,
@@ -118,7 +119,7 @@ pub const OPCODE_TABLE: [(Operation, AddressingMode, CycleCount, CycleCount);256
 /* Fx */(BEQ,rel,2,1),(SBC,izy,5,1),(KIL,imp,0,0),(ISC,izy,8,0),(NOP,zpx,4,0),(SBC,zpx,4,0),(INC,zpx,6,0),(ISC,zpx,6,0),(SED,imp,2,0),(SBC,aby,4,1),(NOP,imp,2,0),(ISC,aby,7,0),(NOP,abx,4,1),(SBC,abx,4,1),(INC,abx,7,0),(ISC,abx,7,0),
     ];
 
-#[derive(Debug)]
+#[derive(Debug,Copy,Clone)]
 pub struct DecodedOp
 {
     pub ir: u8,
@@ -129,7 +130,43 @@ pub struct DecodedOp
     
     pub cycles: u8,
     pub oops: bool,
+}
 
+#[derive(Debug,Copy,Clone)]
+pub struct Operand
+{
+    pub addr_mode: AddressingMode,
+    pub value: u16,
+}
+
+impl fmt::Display for Operand
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.addr_mode {
+            abs => write!(f, "${:04x}   ", self.value),
+            acc => write!(f, "A       "),
+            imm => write!(f, "#${:02x}    ", self.value & 0xff),
+            imp => write!(f, "        "),
+            izx => write!(f, "(${:02x},X) ", self.value & 0xff),
+            izy => write!(f, "(${:02x},Y) ", self.value & 0xff),
+            zp =>  write!(f, "${:02x}     ", self.value & 0xff),
+            zpx => write!(f, "${:02x},X   ", self.value & 0xff),
+            zpy => write!(f, "${:02x},Y   ", self.value & 0xff),
+            rel => write!(f, "${:02x}     ", self.value & 0xff),
+            abx => write!(f, "${:04x},X ", self.value),
+            aby => write!(f, "${:04x},Y ", self.value),
+            ind => write!(f, "(${:04x}) ", self.value),
+        }
+    }
+}
+
+#[derive(Debug,Copy,Clone)]
+pub struct DecodedInstruction
+{
+    pub address: u16,
+    pub code: DecodedOp,
+    pub operand: Operand,
+    pub dump: [u8;3],
 }
 
 impl DecodedOp
@@ -154,4 +191,95 @@ impl DecodedOp
             }
         }
     }
+}
+
+pub trait Searchable<T> 
+{
+    fn try_find_index<P>(&self, predicate: P) -> Option<usize>
+    where
+        
+        P: Fn(&T) -> std::cmp::Ordering;
+}
+
+impl Searchable<DecodedInstruction> for std::vec::Vec<DecodedInstruction> {
+    fn try_find_index<P>(&self, predicate: P) -> Option<usize>
+    where
+        P: Fn(&DecodedInstruction) -> std::cmp::Ordering
+    {
+        let mut size = self.len();
+        let mut base = 0;
+
+        while size > 0
+        {
+            let index = base + size/2;
+
+            match predicate(&self[index])
+            {
+                std::cmp::Ordering::Equal => return Some(index),
+                std::cmp::Ordering::Less => { size = size/2; base = index; },
+                std::cmp::Ordering::Greater => { size = size/2; },
+            }
+        }
+
+        match predicate(&self[base])
+        {
+            std::cmp::Ordering::Equal => Some(base),
+            std::cmp::Ordering::Less => None ,
+            std::cmp::Ordering::Greater => None,
+        }
+    }
+}
+
+#[derive(Debug,Copy,Clone,PartialEq)]
+pub enum DissassemblyError
+{
+    Error(&'static str),
+}
+
+pub fn dissassemble(instr_stream: &[u8], stream_offset: u16) -> Result<std::vec::Vec<DecodedInstruction>, DissassemblyError>
+{
+    let mut instructions: std::vec::Vec<DecodedInstruction> = std::vec::Vec::new();
+
+    let mut index = 0;
+
+    while index < instr_stream.len()
+    {
+        let code = DecodedOp::from_ir(instr_stream[index]);
+        let address = stream_offset + index as u16;
+        let mut dump = [0u8;3];
+        dump[0..code.opsize as usize].copy_from_slice(&instr_stream[index..index + code.opsize as usize]);
+
+        if index + code.opsize as usize > instr_stream.len()
+        {
+            return Err(DissassemblyError::Error("Unexpected end of instruction stream!"));
+        }
+
+        let lo = match code.opsize {
+            0 | 1 => 0,
+            _ => instr_stream[index+1],
+        };
+
+        let hi = match code.opsize {
+            3 => instr_stream[index+2],
+            _ => 0,
+        };
+
+        let operand = Operand {
+            addr_mode: code.addr_mode,
+            value: u16::make(hi,lo)
+        };
+
+        index += code.opsize as usize;
+
+        instructions.push(
+                DecodedInstruction {
+                    address,
+                    code,
+                    operand,
+                    dump,
+                }
+            );
+    }
+
+    Ok(instructions)
 }
