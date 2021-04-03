@@ -1,48 +1,28 @@
 
 mod common;
-mod system;
-mod bus;
+mod nes;
 mod mos6502;
-mod debugger;
 mod snake;
 
-use cursive;
-use crate::debugger::ui;
-use crate::snake::SnakeGame;
-
-use sdl2::pixels::PixelFormatEnum;
-use sdl2::video::Window;
+extern crate clap;
+use clap::{App,SubCommand, AppSettings};
 
 fn main() {
+    let matches = App::new("Emo the emulator")
+        .version("0.0.1")
+        .setting(AppSettings::ArgRequiredElseHelp)
+        .subcommand(SubCommand::with_name("run")
+            .about("Runs the given emulation")
+            .setting(AppSettings::ArgRequiredElseHelp)
+            .subcommand(SubCommand::with_name("snake")
+                    .about("6502 emulation of Snake")
+                )
+        )
+        .get_matches();
 
-    // init SDL2
-    let sdl_context = sdl2::init().unwrap();
-    let video_subsystem = sdl_context.video().unwrap();
-    let mut window = video_subsystem
-         .window("Snake game - Step", (32.0 * 10.0) as u32, (32.0 * 10.0) as u32)
-         .position_centered()
-         .build().unwrap();
-
-    let mut canvas = window.into_canvas().present_vsync().build().unwrap();
-    let mut event_pump = sdl_context.event_pump().unwrap();
-    canvas.set_scale(10.0, 10.0).unwrap();
-
-    let creator = canvas.texture_creator();
-    let texture = creator.create_texture_target(PixelFormatEnum::RGB24, 32, 32).unwrap();
-
-    // Main emulator loop
-    let mut game = SnakeGame::new(&mut event_pump, &mut canvas, texture);
-    game.run_mode = snake::RunMode::StepInstruction;
-    
-    game.init();
-
-    loop
-    {
-        game.update_once();     // right now the game will kill itself on screen input quit
-
-        match game.run_mode {
-            snake::RunMode::Run => std::thread::sleep(std::time::Duration::new(0, 100_000)),
-            _ => {}// do nothing
+    if let Some(run) = matches.subcommand_matches("run") {
+        if run.is_present("snake") {
+            snake::run_snake();
         }
     }
 }

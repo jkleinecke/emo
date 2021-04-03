@@ -144,7 +144,7 @@ impl<'a> SnakeGame<'a> {
             self.canvas.copy(&self.texture, None, None).unwrap();
         }
 
-        self.canvas.window_mut().set_title("Snake Game - Space to Step CPU");
+        let _ = self.canvas.window_mut().set_title("Snake Game - Space to Step CPU");
 
         self.disassembly = self.dissassemble().unwrap();
 
@@ -187,11 +187,11 @@ impl<'a> SnakeGame<'a> {
                     }
                     Event::KeyDown { keycode: Some(Keycode::Space), .. } => {
                         self.run_mode = RunMode::StepInstruction;
-                        self.canvas.window_mut().set_title("Snake Game - Space to Step CPU");
+                        let _ = self.canvas.window_mut().set_title("Snake Game - Space to Step CPU");
                         should_step_cpu = true;
                     }
                     Event::KeyDown { keycode: Some(Keycode::F5), .. } => {
-                        self.canvas.window_mut().set_title("Snake Game");
+                        let _ = self.canvas.window_mut().set_title("Snake Game");
                         self.run_mode = RunMode::Run;
                     }
                     _ => {/* do nothing */}
@@ -242,18 +242,9 @@ impl<'a> SnakeGame<'a> {
 
     }
 
-    pub fn cpu_state(&self) -> State {
-        self.cpu.copy_state()
-    }
-
     pub fn dissassemble(&self) -> Result<BTreeMap<u16,DecodedInstruction>,DissassemblyError>
     {
         crate::mos6502::dissassemble(&self.memory.borrow().ram[0x600..0x73b], 0x600)
-    }
-
-    pub fn copy_ram(&self, dst:&mut [Byte], offset:Word,size:Word) 
-    {
-        dst.copy_from_slice(&self.memory.borrow().ram[offset as usize..size as usize]);        
     }
 }
 

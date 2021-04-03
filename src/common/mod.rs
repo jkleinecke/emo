@@ -4,6 +4,8 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
+pub mod serialization;
+
 pub use std::cmp::Eq;
 pub use std::convert::From;
 pub use std::default::Default;

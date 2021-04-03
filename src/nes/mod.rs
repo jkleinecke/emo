@@ -5,7 +5,6 @@
 
 use crate::mos6502::{Cpu6502,PC_START,Memory};
 use crate::common::Clocked;
-use crate::bus::{Bus};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -18,15 +17,8 @@ pub struct Nes {
     pub bus:Rc<RefCell<Bus>>,
 }
 
-
-impl Memory for Bus {
-    fn read(&mut self, addr:u16) -> u8 {
-        self.load(addr)
-    }
-
-    fn write(&mut self, addr:u16, value:u8) {
-        self.store(addr, value)
-    }
+pub struct Bus {
+    pub cpu_ram: [u8;0x800],
 }
 
 impl Nes
@@ -99,3 +91,57 @@ impl Nes
     }
 }
 
+
+impl Bus {
+    pub fn new() -> Self {
+        Bus {
+            cpu_ram: [0;0x800],
+        }
+    }
+
+    pub fn load(&mut self, ptr: u16) -> u8
+    {
+        return self.cpu_ram[ptr as usize];
+    }
+
+    pub fn store(&mut self, ptr: u16, value: u8)
+    {
+        self.cpu_ram[ptr as usize] = value;
+    }
+
+    pub fn write_ram(&mut self, offset: usize, data: &Vec<u8>)
+    {
+        self.cpu_ram[offset .. (offset + data.len())].copy_from_slice(&data[..]);
+    }
+
+    pub fn read_ram(&mut self, offset: usize, size: usize) -> Vec<u8>
+    {
+        self.cpu_ram[offset .. (offset + size)].to_vec()
+    }
+}
+
+const RAM_ADDR: u16 = 0x0000;
+const RAM_ADDR_END: u16 = 0x1FFF;
+
+impl Memory for Bus {
+
+    fn read(&mut self, addr:u16) -> u8 {
+        match addr {
+            RAM_ADDR ..= RAM_ADDR_END => self.cpu_ram[(addr & 0x7FF) as usize],
+            _ => {
+                println!("BAD READ ACCESS: Ignoring bad bus access at {:#06X}", addr);
+                0
+            }
+        }
+    }
+
+    fn write(&mut self, addr:u16, value:u8) {
+        match addr {
+            RAM_ADDR ..= RAM_ADDR_END => self.cpu_ram[(addr & 0x7FF) as usize] = value,
+            _ => {
+                println!("BAD WRITE ACCESS: Ignoring bad bus access at {:#06X}", addr);
+            }
+        }
+        self.store(addr, value)
+    }
+}

@@ -8,11 +8,7 @@ edition = "2018"
 
 [dependencies]
 rand = "=0.7.3"
-
-[dependencies.cursive]
-version = "0.16"
-default-features = false
-features = ["crossterm-backend"]
+clap = "2.33"
 
 [dependencies.sdl2]
 version = "0.34"
