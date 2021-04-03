@@ -2,6 +2,7 @@
 
 use std::fmt;
 use crate::common::WORD;
+use std::collections::BTreeMap;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Operation {
@@ -193,52 +194,15 @@ impl DecodedOp
     }
 }
 
-pub trait Searchable<T> 
-{
-    fn try_find_index<P>(&self, predicate: P) -> Option<usize>
-    where
-        
-        P: Fn(&T) -> std::cmp::Ordering;
-}
-
-impl Searchable<DecodedInstruction> for std::vec::Vec<DecodedInstruction> {
-    fn try_find_index<P>(&self, predicate: P) -> Option<usize>
-    where
-        P: Fn(&DecodedInstruction) -> std::cmp::Ordering
-    {
-        let mut size = self.len();
-        let mut base = 0;
-
-        while size > 0
-        {
-            let index = base + size/2;
-
-            match predicate(&self[index])
-            {
-                std::cmp::Ordering::Equal => return Some(index),
-                std::cmp::Ordering::Less => { size = size/2; base = index; },
-                std::cmp::Ordering::Greater => { size = size/2; },
-            }
-        }
-
-        match predicate(&self[base])
-        {
-            std::cmp::Ordering::Equal => Some(base),
-            std::cmp::Ordering::Less => None ,
-            std::cmp::Ordering::Greater => None,
-        }
-    }
-}
-
 #[derive(Debug,Copy,Clone,PartialEq)]
 pub enum DissassemblyError
 {
     Error(&'static str),
 }
 
-pub fn dissassemble(instr_stream: &[u8], stream_offset: u16) -> Result<std::vec::Vec<DecodedInstruction>, DissassemblyError>
+pub fn dissassemble(instr_stream: &[u8], stream_offset: u16) -> Result<BTreeMap<u16, DecodedInstruction>, DissassemblyError>
 {
-    let mut instructions: std::vec::Vec<DecodedInstruction> = std::vec::Vec::new();
+    let mut instructions = BTreeMap::new();
 
     let mut index = 0;
 
@@ -271,7 +235,8 @@ pub fn dissassemble(instr_stream: &[u8], stream_offset: u16) -> Result<std::vec:
 
         index += code.opsize as usize;
 
-        instructions.push(
+        instructions.insert(
+                address,
                 DecodedInstruction {
                     address,
                     code,

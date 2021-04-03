@@ -1,5 +1,5 @@
 
-
+use std::collections::BTreeMap;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -42,7 +42,7 @@ pub struct SnakeGame<'a> {
     canvas: &'a mut sdl2::render::Canvas<sdl2::video::Window>,
     texture: Texture<'a>,
     pub run_mode: RunMode,
-    disassembly: std::vec::Vec<DecodedInstruction>,
+    disassembly: BTreeMap<u16, DecodedInstruction>,
 }
 
 
@@ -101,7 +101,7 @@ impl<'a> SnakeGame<'a> {
             canvas,
             texture,
             run_mode: RunMode::Run,
-            disassembly: Vec::new(),
+            disassembly: BTreeMap::new(),
         }
     }
     
@@ -198,25 +198,19 @@ impl<'a> SnakeGame<'a> {
 
             let state = self.cpu.copy_state();
             
-            let instr_index = self.disassembly.try_find_index(|&i| i.address.partial_cmp(&last_pc).unwrap() ).unwrap();
-            let instr = self.disassembly[instr_index];
-
-
+            let instr = self.disassembly.get(&last_pc).unwrap();
+            
             let instr_str = format!("{:#06x}:  {:02x} {:02x} {:02x}   {} {}", instr.address, instr.dump[0], instr.dump[1], instr.dump[2], instr.code.opcode, instr.operand);
 
             println!("{} => {}", instr_str, state);
 
-            if instr_index + 1 < self.disassembly.len() 
+            let next_instr = last_pc + instr.code.opsize as u16;
+            if next_instr != state.pc
             {
-                let next_instr = self.disassembly[instr_index + 1];
-
-                if next_instr.address != state.pc
-                {
-                    // we must have made a jump
-                    println!("========== <<<<<<<<<< JUMP {:#06x} >>>>>>>>>> ==========", state.pc)
-                }
-            }       
-
+                // we must have made a jump
+                println!("========== <<<<<<<<<< JUMP {:#06x} >>>>>>>>>> ==========", state.pc)
+            }
+                
             // update the screen if anything changed
             if mem.vram_dirty
             {
@@ -236,7 +230,7 @@ impl<'a> SnakeGame<'a> {
         self.cpu.copy_state()
     }
 
-    pub fn dissassemble(&self) -> Result<std::vec::Vec<DecodedInstruction>,DissassemblyError>
+    pub fn dissassemble(&self) -> Result<BTreeMap<u16,DecodedInstruction>,DissassemblyError>
     {
         crate::mos6502::dissassemble(&self.memory.borrow().ram[0x600..0x73b], 0x600)
     }

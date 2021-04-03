@@ -16,5 +16,5 @@ features = ["crossterm-backend"]
 
 [dependencies.sdl2]
 version = "0.34"
-default-features = true
-#features = ["bundled","static-link"]
+#default-features = true
+features = ["bundled","static-link"]
