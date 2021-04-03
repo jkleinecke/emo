@@ -29,6 +29,7 @@ fn color(byte: Byte) -> Color {
     }
 }
 
+#[derive(Debug,PartialEq,Copy,Clone)]
 pub enum RunMode {
     Run,
     StepInstruction,
@@ -132,9 +133,18 @@ impl<'a> SnakeGame<'a> {
             0x60, 0xa6, 0xff, 0xea, 0xea, 0xca, 0xd0, 0xfb, 0x60,
         ];
 
-        self.memory.borrow_mut().load(0x600, &game_code);
-        self.cpu.pc = 0x600;
-        self.cpu.status.set_interrupt(false);
+        {
+            let mut mem = self.memory.borrow_mut();
+            mem.load(0x600, &game_code);
+            self.cpu.pc = 0x600;
+            self.cpu.status.set_interrupt(false);
+
+            self.texture.update(None, &mem.vram, 32 * 3).unwrap();
+
+            self.canvas.copy(&self.texture, None, None).unwrap();
+        }
+
+        self.canvas.window_mut().set_title("Snake Game - Space to Step CPU");
 
         self.disassembly = self.dissassemble().unwrap();
 
@@ -177,9 +187,11 @@ impl<'a> SnakeGame<'a> {
                     }
                     Event::KeyDown { keycode: Some(Keycode::Space), .. } => {
                         self.run_mode = RunMode::StepInstruction;
+                        self.canvas.window_mut().set_title("Snake Game - Space to Step CPU");
                         should_step_cpu = true;
                     }
                     Event::KeyDown { keycode: Some(Keycode::F5), .. } => {
+                        self.canvas.window_mut().set_title("Snake Game");
                         self.run_mode = RunMode::Run;
                     }
                     _ => {/* do nothing */}
@@ -222,6 +234,10 @@ impl<'a> SnakeGame<'a> {
                 self.canvas.copy(&self.texture, None, None).unwrap();
                 self.canvas.present();
             }
+        }
+        else
+        {
+            self.canvas.present();
         }
 
     }

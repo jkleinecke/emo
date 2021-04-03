@@ -11,14 +11,15 @@ use crate::debugger::ui;
 use crate::snake::SnakeGame;
 
 use sdl2::pixels::PixelFormatEnum;
+use sdl2::video::Window;
 
 fn main() {
 
     // init SDL2
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
-    let window = video_subsystem
-         .window("Snake game", (32.0 * 20.0) as u32, (32.0 * 20.0) as u32)
+    let mut window = video_subsystem
+         .window("Snake game - Step", (32.0 * 10.0) as u32, (32.0 * 10.0) as u32)
          .position_centered()
          .build().unwrap();
 
@@ -40,7 +41,7 @@ fn main() {
         game.update_once();     // right now the game will kill itself on screen input quit
 
         match game.run_mode {
-            snake::RunMode::Run => std::thread::sleep(std::time::Duration::new(0, 140_000)),
+            snake::RunMode::Run => std::thread::sleep(std::time::Duration::new(0, 100_000)),
             _ => {}// do nothing
         }
     }
