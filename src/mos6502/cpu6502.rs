@@ -246,23 +246,49 @@ impl Cpu6502 {
         /* push status on stack, */
         let status = self.status.flags | (1u8 << BIT_U);
         
-        //--TODO!
-        /*** At this point, the signal status determines which interrupt vector is used ***/
         self.stack_push(status);
         
         self.status.set_interrupt(false) ;
         
-        self.pc = self.mem_fetch16(PC_START);
+        self.pc = self.mem_fetch16(0xFFFC);
         
         self.ir_cycles =7;
     }
 
     pub fn nmi(&mut self) {
-        panic!();
+        /* push pc hi on stack */
+        self.stack_push(self.pc.hi());
+        /* push pc lo on stack */
+        self.stack_push(self.pc.lo());
+        
+        /* push status on stack, */
+        let status = self.status.flags | (1u8 << BIT_U) | (1u8 << BIT_I) ;
+        
+        self.stack_push(status);
+        
+        self.status.set_interrupt(false) ;
+        
+        self.pc = self.mem_fetch16(0xFFFA);
+        
+        self.ir_cycles =7;
     }
 
     pub fn irq(&mut self) {
-        panic!();
+        /* push pc hi on stack */
+        self.stack_push(self.pc.hi());
+        /* push pc lo on stack */
+        self.stack_push(self.pc.lo());
+        
+        /* push status on stack, */
+        let status = self.status.flags | (1u8 << BIT_U) | (1u8 << BIT_I) ;
+        
+        self.stack_push(status);
+        
+        self.status.set_interrupt(false) ;
+        
+        self.pc = self.mem_fetch16(0xFFFE);
+        
+        self.ir_cycles =7;
     }
 
     pub fn did_halt(&self) -> bool {
