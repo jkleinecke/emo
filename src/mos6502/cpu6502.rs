@@ -11,11 +11,6 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::fmt;
 
-macro_rules! ternary {
-    ($condition: expr, $_true: expr, $_false: expr) => {
-        if $condition { $_true } else { $_false }
-    };
-}
 
 /***********************************************************
  * 
@@ -238,17 +233,22 @@ impl Cpu6502 {
     }
 
     pub fn reset(&mut self) {
-        /* push pc hi on stack */
-        self.stack_push(self.pc.hi());
-        /* push pc lo on stack */
-        self.stack_push(self.pc.lo());
         
-        /* push status on stack, */
-        let status = self.status.flags | (1u8 << BIT_U);
+        //--TODO: Figure out if we actually need to do this...
+        // /* push pc hi on stack */
+        // self.stack_push(self.pc.hi());
+        // /* push pc lo on stack */
+        // self.stack_push(self.pc.lo());
         
-        self.stack_push(status);
+        // /* push status on stack, */
+        // let status = self.status.flags | (1u8 << BIT_U);
         
-        self.status.set_interrupt(false) ;
+        // self.stack_push(status);
+        self.a = 0;
+        self.x = 0;
+        self.y = 0;
+        self.sp = 0xFD;
+        self.status.flags = 0b100100;
         
         self.pc = self.mem_fetch16(0xFFFC);
         

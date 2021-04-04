@@ -1,5 +1,7 @@
 
+#[macro_use]
 mod common;
+mod cartridge;
 mod nes;
 mod mos6502;
 mod snake;

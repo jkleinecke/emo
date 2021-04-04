@@ -85,8 +85,6 @@ impl SnakeMemory {
     {
         self.ram[offset .. (offset + data.len())].copy_from_slice(&data[..]);
     }
-
-
 }
 
 impl<'a> SnakeGame<'a> {

@@ -29,6 +29,13 @@ pub use std::ops::{
 	ShrAssign,
 };
 
+#[macro_export]
+macro_rules! ternary {
+    ($condition: expr, $_true: expr, $_false: expr) => {
+        if $condition { $_true } else { $_false }
+    };
+}
+
 pub type Byte = u8;
 pub type Word = u16;
 
