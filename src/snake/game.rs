@@ -13,6 +13,7 @@ use rand::prelude::ThreadRng;
 
 use crate::common::{Clocked,Word,Byte};
 use crate::mos6502::*;
+use crate::cartridge::Rom;
 
 
 fn color(byte: Byte) -> Color {
@@ -44,52 +45,45 @@ pub struct SnakeGame<'a> {
     texture: Texture<'a>,
     pub run_mode: RunMode,
     disassembly: BTreeMap<u16, DecodedInstruction>,
+    vram: [Byte;32*32*3],
 }
 
 
 struct SnakeMemory {
-    ram: [Byte;0xffff],
-    vram: [Byte;32*32*3],
-    vram_dirty: bool,
+    ram: [Byte;0x800],
+    rom: Rom,
 }
 
 impl Memory for SnakeMemory {
-    fn read(&mut self, addr:Word) -> Byte {
-        self.ram[addr as usize]
+    fn read(&self, addr:Word) -> Byte {
+        match addr
+        {
+            0x8000 ..= 0xFFFF => self.rom.read(addr & 0x7FFF),
+            0x0000 ..= 0x1FFF => self.ram[(addr & 0x7FF) as usize],
+            _ => 0
+        }
     }
     fn write(&mut self, addr:Word, value:Byte) {
-        
-        if addr >= 0x200 && addr < 0x600 {
-            self.vram_dirty = true;
-            let (b1,b2,b3) = color(value).rgb();
-            let pixel_idx = ((addr - 0x200) * 3) as usize;
-            self.vram[pixel_idx + 0] = b1;
-            self.vram[pixel_idx + 1] = b2;
-            self.vram[pixel_idx + 2] = b3;
-        }
-
-        self.ram[addr as usize] = value;
+        match addr
+        {
+            0x0000 ..= 0x1FFF => self.ram[(addr & 0x7FF) as usize] = value,
+            _ => { panic!("Invalid write") },
+        };
     }
 }
 
 impl SnakeMemory {
-    pub fn new() -> Self {
+    pub fn new(rom_bytes: &Vec<u8>) -> Self {
         SnakeMemory {
-            ram: [0;0xffff],
-            vram: [0;32*32*3],
-            vram_dirty: false,           
+            ram: [0;0x800],  
+            rom: Rom::new(rom_bytes).unwrap(),   
         }
-    }
-
-    pub fn load(&mut self, offset: usize, data: &Vec<Byte>)
-    {
-        self.ram[offset .. (offset + data.len())].copy_from_slice(&data[..]);
     }
 }
 
 impl<'a> SnakeGame<'a> {
-    pub fn new(event_pump: &'a mut sdl2::EventPump, canvas: &'a mut sdl2::render::Canvas<sdl2::video::Window>, texture: sdl2::render::Texture<'a>) -> Self {
-        let memory = Rc::new(RefCell::new(SnakeMemory::new()));
+    pub fn new(rom_bytes: &Vec<u8>, event_pump: &'a mut sdl2::EventPump, canvas: &'a mut sdl2::render::Canvas<sdl2::video::Window>, texture: sdl2::render::Texture<'a>) -> Self {
+        let memory = Rc::new(RefCell::new(SnakeMemory::new(rom_bytes)));
         let cpu = Cpu6502::new(memory.clone());
 
         SnakeGame {
@@ -101,46 +95,18 @@ impl<'a> SnakeGame<'a> {
             texture,
             run_mode: RunMode::Run,
             disassembly: BTreeMap::new(),
+            vram: [0;32*32*3],
         }
     }
     
 
     pub fn init(&mut self) 
     {
-        let game_code = vec![
-            0x20, 0x06, 0x06, 0x20, 0x38, 0x06, 0x20, 0x0d, 0x06, 0x20, 0x2a, 0x06, 0x60, 0xa9, 0x02,
-            0x85, 0x02, 0xa9, 0x04, 0x85, 0x03, 0xa9, 0x11, 0x85, 0x10, 0xa9, 0x10, 0x85, 0x12, 0xa9,
-            0x0f, 0x85, 0x14, 0xa9, 0x04, 0x85, 0x11, 0x85, 0x13, 0x85, 0x15, 0x60, 0xa5, 0xfe, 0x85,
-            0x00, 0xa5, 0xfe, 0x29, 0x03, 0x18, 0x69, 0x02, 0x85, 0x01, 0x60, 0x20, 0x4d, 0x06, 0x20,
-            0x8d, 0x06, 0x20, 0xc3, 0x06, 0x20, 0x19, 0x07, 0x20, 0x20, 0x07, 0x20, 0x2d, 0x07, 0x4c,
-            0x38, 0x06, 0xa5, 0xff, 0xc9, 0x77, 0xf0, 0x0d, 0xc9, 0x64, 0xf0, 0x14, 0xc9, 0x73, 0xf0,
-            0x1b, 0xc9, 0x61, 0xf0, 0x22, 0x60, 0xa9, 0x04, 0x24, 0x02, 0xd0, 0x26, 0xa9, 0x01, 0x85,
-            0x02, 0x60, 0xa9, 0x08, 0x24, 0x02, 0xd0, 0x1b, 0xa9, 0x02, 0x85, 0x02, 0x60, 0xa9, 0x01,
-            0x24, 0x02, 0xd0, 0x10, 0xa9, 0x04, 0x85, 0x02, 0x60, 0xa9, 0x02, 0x24, 0x02, 0xd0, 0x05,
-            0xa9, 0x08, 0x85, 0x02, 0x60, 0x60, 0x20, 0x94, 0x06, 0x20, 0xa8, 0x06, 0x60, 0xa5, 0x00,
-            0xc5, 0x10, 0xd0, 0x0d, 0xa5, 0x01, 0xc5, 0x11, 0xd0, 0x07, 0xe6, 0x03, 0xe6, 0x03, 0x20,
-            0x2a, 0x06, 0x60, 0xa2, 0x02, 0xb5, 0x10, 0xc5, 0x10, 0xd0, 0x06, 0xb5, 0x11, 0xc5, 0x11,
-            0xf0, 0x09, 0xe8, 0xe8, 0xe4, 0x03, 0xf0, 0x06, 0x4c, 0xaa, 0x06, 0x4c, 0x35, 0x07, 0x60,
-            0xa6, 0x03, 0xca, 0x8a, 0xb5, 0x10, 0x95, 0x12, 0xca, 0x10, 0xf9, 0xa5, 0x02, 0x4a, 0xb0,
-            0x09, 0x4a, 0xb0, 0x19, 0x4a, 0xb0, 0x1f, 0x4a, 0xb0, 0x2f, 0xa5, 0x10, 0x38, 0xe9, 0x20,
-            0x85, 0x10, 0x90, 0x01, 0x60, 0xc6, 0x11, 0xa9, 0x01, 0xc5, 0x11, 0xf0, 0x28, 0x60, 0xe6,
-            0x10, 0xa9, 0x1f, 0x24, 0x10, 0xf0, 0x1f, 0x60, 0xa5, 0x10, 0x18, 0x69, 0x20, 0x85, 0x10,
-            0xb0, 0x01, 0x60, 0xe6, 0x11, 0xa9, 0x06, 0xc5, 0x11, 0xf0, 0x0c, 0x60, 0xc6, 0x10, 0xa5,
-            0x10, 0x29, 0x1f, 0xc9, 0x1f, 0xf0, 0x01, 0x60, 0x4c, 0x35, 0x07, 0xa0, 0x00, 0xa5, 0xfe,
-            0x91, 0x00, 0x60, 0xa6, 0x03, 0xa9, 0x00, 0x81, 0x10, 0xa2, 0x00, 0xa9, 0x01, 0x81, 0x10,
-            0x60, 0xa6, 0xff, 0xea, 0xea, 0xca, 0xd0, 0xfb, 0x60,
-        ];
+        self.cpu.reset();
 
-        {
-            let mut mem = self.memory.borrow_mut();
-            mem.load(0x600, &game_code);
-            self.cpu.pc = 0x600;
-            self.cpu.status.set_interrupt(false);
-
-            self.texture.update(None, &mem.vram, 32 * 3).unwrap();
-
-            self.canvas.copy(&self.texture, None, None).unwrap();
-        }
+        self.vram = [0;32*32*3];
+        self.texture.update(None, &self.vram, 32 * 3).unwrap();
+        self.canvas.copy(&self.texture, None, None).unwrap();
 
         let _ = self.canvas.window_mut().set_title("Snake Game - Space to Step CPU");
 
@@ -204,7 +170,7 @@ impl<'a> SnakeGame<'a> {
             self.cpu.ir_cycles = 0;  // snake doesn't rely on cycle counting, so just go for it here
             self.cpu.clock();
 
-            let mut mem = self.memory.borrow_mut();
+            let mem = self.memory.borrow();
 
             let state = self.cpu.copy_state();
             
@@ -220,17 +186,35 @@ impl<'a> SnakeGame<'a> {
                 // we must have made a jump
                 println!("========== <<<<<<<<<< JUMP {:#06x} >>>>>>>>>> ==========", state.pc)
             }
-                
-            // update the screen if anything changed
-            if mem.vram_dirty
-            {
-                println!("VRAM DIRTY!");
-                mem.vram_dirty = false;
-                
-                self.texture.update(None, &mem.vram, 32 * 3).unwrap();
 
-                self.canvas.copy(&self.texture, None, None).unwrap();
-                self.canvas.present();
+            // see if anything changed on the screen
+            if state.ir == 0x81
+            {
+                let mut did_screen_change = false;
+                for addr in 0x200..0x600
+                {
+                    let value = mem.ram[addr];
+                    let (r,g,b) = color(value).rgb();
+                    let pixel_idx = ((addr - 0x200) * 3) as usize; // or & 0x1FF?
+                    if self.vram[pixel_idx] != r || self.vram[pixel_idx+1] != g || self.vram[pixel_idx+2] != b
+                    {
+                        self.vram[pixel_idx+0] = r;
+                        self.vram[pixel_idx+1] = g;
+                        self.vram[pixel_idx+2] = b;
+                        did_screen_change = true;
+                    }
+                }
+                    
+                // update the screen if anything changed
+                if did_screen_change
+                {
+                    println!("VRAM DIRTY!");
+                    
+                    self.texture.update(None, &self.vram, 32 * 3).unwrap();
+                            
+                    self.canvas.copy(&self.texture, None, None).unwrap();
+                    self.canvas.present();
+                }
             }
         }
         else
@@ -242,7 +226,12 @@ impl<'a> SnakeGame<'a> {
 
     pub fn dissassemble(&self) -> Result<BTreeMap<u16,DecodedInstruction>,DissassemblyError>
     {
-        crate::mos6502::dissassemble(&self.memory.borrow().ram[0x600..0x73b], 0x600)
+        let mem = self.memory.borrow();
+        let lo = mem.rom.read(0xFFFC & 0x7FFF);
+        let hi = mem.rom.read(0xFFFD & 0x7FFF);
+        let start = u16::make(hi,lo);
+        let idx = start & 0x7FFF;
+        crate::mos6502::dissassemble(&self.memory.borrow().rom.prg_rom[idx as usize..(idx + 0x135) as usize], start)
     }
 }
 

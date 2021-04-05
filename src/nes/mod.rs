@@ -3,14 +3,11 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use crate::mos6502::{Cpu6502,PC_START,Memory};
+use crate::mos6502::{Cpu6502,PC_START,Memory,State};
 use crate::common::Clocked;
 use crate::cartridge::Rom;
 use std::cell::RefCell;
 use std::rc::Rc;
-
-const SYSMEMSIZE: usize = 0xFFFF;
-pub const PROGRAM_START: u16 = 0x8000;
 
 pub struct Nes {
     pub sys_clocks:u64,
@@ -48,13 +45,22 @@ impl Nes
 
     pub fn run(&mut self)
     {
+        self.run_with_callback( |nes| nes.cpu.did_halt() );                
+    }
+
+    pub fn run_with_callback<CB>(&mut self, callback: CB)
+        where CB: Fn(&Nes) -> bool
+    {
         loop
         {
-            self.step_instruction();
+            self.clock();
 
-            if self.cpu.did_halt() 
+            if self.cpu.ir_cycles == 0 
             {
-                break;
+                if (callback)(&self)
+                {
+                    break;
+                }
             }
         }
     }
@@ -74,13 +80,8 @@ impl Nes
 
     pub fn clock(&mut self)
     {
-        // CPU clock also gets a data bus clock
-        if self.cpu.did_halt() == false 
-        {
-            self.cpu.clock();
-        }
-
-        self.sys_clocks += 1;
+        self.cpu.clock();
+        self.sys_clocks = self.sys_clocks.wrapping_add(1);
     }
 }
 
@@ -123,7 +124,7 @@ const CARTRIDGE_ADDR_END: u16 = 0xFFFF;
 
 impl Memory for Bus {
 
-    fn read(&mut self, addr:u16) -> u8 {
+    fn read(&self, addr:u16) -> u8 {
         match addr {
             RAM_ADDR ..= RAM_ADDR_END => {
                 // cpu ram is 13 bits in total address size, but actual hardware only

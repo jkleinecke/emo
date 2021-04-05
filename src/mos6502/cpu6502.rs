@@ -42,7 +42,7 @@ const BIT_V: u8   = 6;
 const BIT_N: u8   = 7;
 
 pub trait Memory {
-    fn read(&mut self, addr:Word) -> Byte;
+    fn read(&self, addr:Word) -> Byte;
     fn write(&mut self, addr:Word, value:Byte);
 }
 
@@ -51,7 +51,7 @@ pub struct Ram {
 }
 
 impl Memory for Ram {
-    fn read(&mut self, addr:Word) -> Byte {
+    fn read(&self, addr:Word) -> Byte {
         self.data[addr as usize]
     }
     fn write(&mut self, addr:Word, value:Byte) {
@@ -247,6 +247,7 @@ impl Cpu6502 {
         self.a = 0;
         self.x = 0;
         self.y = 0;
+        self.halted = false;
         self.sp = 0xFD;
         self.status.flags = 0b100100;
         
@@ -316,7 +317,7 @@ impl Cpu6502 {
     }
 
     fn mem_fetch(&mut self, addr: Word) -> Byte {
-        self.memory_bus.borrow_mut().read(addr)
+        self.memory_bus.borrow().read(addr)
     }
 
     fn mem_store(&mut self, addr: Word, v: Byte) {
@@ -324,7 +325,7 @@ impl Cpu6502 {
     }
 
     fn mem_fetch16(&mut self, addr: Word) -> Word {
-        let mut bus = self.memory_bus.borrow_mut();
+        let bus = self.memory_bus.borrow();
         let lo = bus.read(addr);
         let hi = bus.read(addr + 1);
         Word::make(hi, lo)

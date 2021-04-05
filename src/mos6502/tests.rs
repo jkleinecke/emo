@@ -173,7 +173,7 @@ mod test {
         assert_eq!(cpu.pc, 0x60F);
         assert_eq!(cpu.status, Status::from_str("nv-Bdizc"));
 
-        let mut mem = cpu.memory_bus.borrow_mut();
+        let mem = cpu.memory_bus.borrow();
         assert_eq!(mem.read(0x200), 0x01);
         assert_eq!(mem.read(0x201), 0x05);
         assert_eq!(mem.read(0x202), 0x08);
@@ -220,7 +220,7 @@ mod test {
         assert_eq!(cpu.pc, 0x606);
         assert_eq!(cpu.status, Status::from_str("nV-BdiZC"));
         
-        let mut mem = cpu.memory_bus.borrow_mut();
+        let mem = cpu.memory_bus.borrow();
         assert_eq!(mem.read(0x01), 0x80);
     }
     
@@ -247,7 +247,7 @@ mod test {
         assert_eq!(cpu.pc, 0x60d);
         assert_eq!(cpu.status, Status::from_str("nv-BdiZC"));
         
-        let mut mem = cpu.memory_bus.borrow_mut();
+        let mem = cpu.memory_bus.borrow();
         assert_eq!(mem.read(0x200), 0x03);
         assert_eq!(mem.read(0x201), 0x03);
     }
@@ -273,7 +273,7 @@ mod test {
         assert_eq!(cpu.pc, 0xcc01);
         assert_eq!(cpu.status, Status::from_str("Nv-Bdizc"));
         
-        let mut mem = cpu.memory_bus.borrow_mut();
+        let mem = cpu.memory_bus.borrow();
         assert_eq!(mem.read(0x00f0), 0x01);
         assert_eq!(mem.read(0x00f1), 0xcc);
     }
@@ -303,7 +303,7 @@ mod test {
         assert_eq!(cpu.pc, 0x0611);
         assert_eq!(cpu.status, Status::from_str("nv-Bdizc"));
         
-        let mut mem = cpu.memory_bus.borrow_mut();
+        let mem = cpu.memory_bus.borrow();
         assert_eq!(mem.read(0x0001), 0x05);
         assert_eq!(mem.read(0x0002), 0x07);
         assert_eq!(mem.read(0x0705), 0x0a);
@@ -335,7 +335,7 @@ mod test {
         assert_eq!(cpu.pc, 0x0611);
         assert_eq!(cpu.status, Status::from_str("nv-Bdizc"));
         
-        let mut mem = cpu.memory_bus.borrow_mut();
+        let mem = cpu.memory_bus.borrow();
         assert_eq!(mem.read(0x0001), 0x03);
         assert_eq!(mem.read(0x0002), 0x07);
         assert_eq!(mem.read(0x0704), 0x0a);
@@ -373,7 +373,7 @@ mod test {
         assert_eq!(cpu.pc, 0x0618);
         assert_eq!(cpu.status, Status::from_str("nv-BdiZC"));
         
-        let mut mem = cpu.memory_bus.borrow_mut();
+        let mem = cpu.memory_bus.borrow();
 
         for i in 0..16
         {
@@ -444,7 +444,7 @@ mod test {
         assert_eq!(cpu.pc, 0x0612);
         assert_eq!(cpu.status, Status::from_str("nv-BdizC"));
 
-        let mut mem = cpu.memory_bus.borrow_mut();
+        let mem = cpu.memory_bus.borrow();
         assert_eq!(mem.read(0x0002), 0x01);
         
     }
@@ -544,7 +544,7 @@ mod test {
         assert_eq!(cpu.pc, 0x060b);
         assert_eq!(cpu.status, Status::from_str("nv-BdizC"));
 
-        let mut mem = cpu.memory_bus.borrow_mut();
+        let mem = cpu.memory_bus.borrow();
         assert_eq!(mem.read(0x0002), 0x01);
         assert_eq!(mem.read(0x00FF), 0x77);
     }
