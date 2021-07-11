@@ -89,6 +89,18 @@ pub trait Clocked {
 //     }
 // }
 
+pub type Bit = bool;
+
+pub trait BitOps {
+    fn on(&self) -> bool;
+    fn off(&self) -> bool;
+}
+
+impl BitOps for Bit {
+    fn on(&self) -> bool { *self == true }
+    fn off(&self) -> bool { *self == false }
+}
+
 pub trait BitTest:
     Binary
     + BitAnd<Self, Output=Self>
@@ -124,29 +136,10 @@ pub trait BitTest:
 		//  Set the selected bit
 		*self |= Self::from(value as u8) << place;
     }
-
-    fn get(&self, place:u8) -> bool
-    {
-        self.bit(place)
-    }
     
-    fn bit(&self, place:u8) -> bool
+    fn bit(&self, place:u8) -> Bit
     {
         ((*self >> place) & Self::from(1)) == Self::from(1)
-    }
-
-    fn on(&self, place:u8) -> bool
-    {
-        self.bit(place)
-    }
-    
-    fn off(&self, place:u8) -> bool
-    {
-        !self.bit(place)
-    }
-
-    fn flip(&mut self, place:u8) {
-        self.set(place, !self.get(place));
     }
 }
 
