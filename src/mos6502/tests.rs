@@ -1,7 +1,6 @@
 #![allow(unused_imports)]
 
-use super::cpu6502::{Cpu6502,Ram,Status};
-use crate::common::{Clocked,WORD};
+use super::{Ram,Cpu,StatusRegister,Clocked,Word,WORD};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -17,7 +16,7 @@ mod test {
         let bus = Rc::new(RefCell::new(ram));
         let mut cpu = Cpu6502::new(bus.clone());
         cpu.pc = 0x600;
-        cpu.status = Status::from_str("nv-Bdizc");
+        cpu.status = StatusRegister::from("nv-Bdizc");
 
         cpu 
     }
@@ -37,8 +36,8 @@ mod test {
         run_instr(&mut cpu, 1);
 
         assert_eq!(cpu.a, 0x05);
-        assert_eq!(cpu.status.zero(), false);
-        assert_eq!(cpu.status.negative(), false);
+        assert_eq!(cpu.status.zero, false);
+        assert_eq!(cpu.status.negative, false);
     }
 
     #[test]
@@ -49,8 +48,8 @@ mod test {
         run_instr(&mut cpu, 1);
 
         assert_eq!(cpu.a, 0x00);
-        assert_eq!(cpu.status.zero(), true);
-        assert_eq!(cpu.status.negative(), false);
+        assert_eq!(cpu.status.zero, true);
+        assert_eq!(cpu.status.negative, false);
     }
 
     #[test]
@@ -61,8 +60,8 @@ mod test {
         run_instr(&mut cpu, 1);
 
         assert_eq!(cpu.a, 0xFF);
-        assert_eq!(cpu.status.zero(), false);
-        assert_eq!(cpu.status.negative(), true);
+        assert_eq!(cpu.status.zero, false);
+        assert_eq!(cpu.status.negative, true);
     }
 
     #[test]
@@ -74,8 +73,8 @@ mod test {
         run_instr(&mut cpu, 1);
 
         assert_eq!(cpu.a, 0x05);
-        assert_eq!(cpu.status.zero(), false);
-        assert_eq!(cpu.status.negative(), false);
+        assert_eq!(cpu.status.zero, false);
+        assert_eq!(cpu.status.negative, false);
     }
 
     #[test]
@@ -89,8 +88,8 @@ mod test {
         run_instr(&mut cpu, 2);
 
         assert_eq!(cpu.x, 0x42);
-        assert_eq!(cpu.status.zero(), false);
-        assert_eq!(cpu.status.negative(), false);
+        assert_eq!(cpu.status.zero, false);
+        assert_eq!(cpu.status.negative, false);
     }
 
     #[test]
@@ -111,8 +110,8 @@ mod test {
         run_instr(&mut cpu, 3);   
 
         assert_eq!(cpu.a, 0x66);
-        assert_eq!(cpu.status.zero(), false);
-        assert_eq!(cpu.status.negative(), false);
+        assert_eq!(cpu.status.zero, false);
+        assert_eq!(cpu.status.negative, false);
     }
 
     #[test]
@@ -133,9 +132,9 @@ mod test {
         run_instr(&mut cpu, 3); // still only 3 instructions
         
         assert_eq!(cpu.a, 0x66);
-        assert_eq!(cpu.status.carry(), false);
-        assert_eq!(cpu.status.zero(), false);
-        assert_eq!(cpu.status.negative(), false);
+        assert_eq!(cpu.status.carry, false);
+        assert_eq!(cpu.status.zero, false);
+        assert_eq!(cpu.status.negative, false);
     }
 
     
@@ -171,7 +170,7 @@ mod test {
         assert_eq!(cpu.y, 0x00);
         assert_eq!(cpu.sp, 0xff);
         assert_eq!(cpu.pc, 0x60F);
-        assert_eq!(cpu.status, Status::from_str("nv-Bdizc"));
+        assert_eq!(cpu.status, StatusRegister::from("nv-Bdizc"));
 
         let mem = cpu.memory_bus.borrow();
         assert_eq!(mem.read(0x200), 0x01);
@@ -198,7 +197,7 @@ mod test {
         assert_eq!(cpu.y, 0x00);
         assert_eq!(cpu.sp, 0xff);
         assert_eq!(cpu.pc, 0x606);
-        assert_eq!(cpu.status, Status::from_str("Nv-BdizC"));
+        assert_eq!(cpu.status, StatusRegister::from("Nv-BdizC"));
     }
     
     #[test]
@@ -218,7 +217,7 @@ mod test {
         assert_eq!(cpu.y, 0x00);
         assert_eq!(cpu.sp, 0xff);
         assert_eq!(cpu.pc, 0x606);
-        assert_eq!(cpu.status, Status::from_str("nV-BdiZC"));
+        assert_eq!(cpu.status, StatusRegister::from("nV-BdiZC"));
         
         let mem = cpu.memory_bus.borrow();
         assert_eq!(mem.read(0x01), 0x80);
@@ -245,7 +244,7 @@ mod test {
         assert_eq!(cpu.y, 0x00);
         assert_eq!(cpu.sp, 0xff);
         assert_eq!(cpu.pc, 0x60d);
-        assert_eq!(cpu.status, Status::from_str("nv-BdiZC"));
+        assert_eq!(cpu.status, StatusRegister::from("nv-BdiZC"));
         
         let mem = cpu.memory_bus.borrow();
         assert_eq!(mem.read(0x200), 0x03);
@@ -271,7 +270,7 @@ mod test {
         assert_eq!(cpu.y, 0x00);
         assert_eq!(cpu.sp, 0xff);
         assert_eq!(cpu.pc, 0xcc01);
-        assert_eq!(cpu.status, Status::from_str("Nv-Bdizc"));
+        assert_eq!(cpu.status, StatusRegister::from("Nv-Bdizc"));
         
         let mem = cpu.memory_bus.borrow();
         assert_eq!(mem.read(0x00f0), 0x01);
@@ -301,7 +300,7 @@ mod test {
         assert_eq!(cpu.y, 0x0a);
         assert_eq!(cpu.sp, 0xff);
         assert_eq!(cpu.pc, 0x0611);
-        assert_eq!(cpu.status, Status::from_str("nv-Bdizc"));
+        assert_eq!(cpu.status, StatusRegister::from("nv-Bdizc"));
         
         let mem = cpu.memory_bus.borrow();
         assert_eq!(mem.read(0x0001), 0x05);
@@ -333,7 +332,7 @@ mod test {
         assert_eq!(cpu.y, 0x01);
         assert_eq!(cpu.sp, 0xff);
         assert_eq!(cpu.pc, 0x0611);
-        assert_eq!(cpu.status, Status::from_str("nv-Bdizc"));
+        assert_eq!(cpu.status, StatusRegister::from("nv-Bdizc"));
         
         let mem = cpu.memory_bus.borrow();
         assert_eq!(mem.read(0x0001), 0x03);
@@ -371,7 +370,7 @@ mod test {
         assert_eq!(cpu.y, 0x20);
         assert_eq!(cpu.sp, 0xff);
         assert_eq!(cpu.pc, 0x0618);
-        assert_eq!(cpu.status, Status::from_str("nv-BdiZC"));
+        assert_eq!(cpu.status, StatusRegister::from("nv-BdiZC"));
         
         let mem = cpu.memory_bus.borrow();
 
@@ -412,7 +411,7 @@ mod test {
         assert_eq!(cpu.y, 0x00);
         assert_eq!(cpu.sp, 0xfd);
         assert_eq!(cpu.pc, 0x0612);
-        assert_eq!(cpu.status, Status::from_str("nv-BdiZC"));
+        assert_eq!(cpu.status, StatusRegister::from("nv-BdiZC"));
     }
 
     #[test]
@@ -442,7 +441,7 @@ mod test {
         assert_eq!(cpu.y, 0x00);
         assert_eq!(cpu.sp, 0xff);
         assert_eq!(cpu.pc, 0x0612);
-        assert_eq!(cpu.status, Status::from_str("nv-BdizC"));
+        assert_eq!(cpu.status, StatusRegister::from("nv-BdizC"));
 
         let mem = cpu.memory_bus.borrow();
         assert_eq!(mem.read(0x0002), 0x01);
@@ -477,7 +476,7 @@ mod test {
         assert_eq!(cpu.y, 0x00);
         assert_eq!(cpu.sp, 0xff);
         assert_eq!(cpu.pc, 0x0612);
-        assert_eq!(cpu.status, Status::from_str("nv-BdizC"));
+        assert_eq!(cpu.status, StatusRegister::from("nv-BdizC"));
     }
 
     #[test]
@@ -542,7 +541,7 @@ mod test {
         assert_eq!(cpu.y, 0x00);
         assert_eq!(cpu.sp, 0xff);
         assert_eq!(cpu.pc, 0x060b);
-        assert_eq!(cpu.status, Status::from_str("nv-BdizC"));
+        assert_eq!(cpu.status, StatusRegister::from("nv-BdizC"));
 
         let mem = cpu.memory_bus.borrow();
         assert_eq!(mem.read(0x0002), 0x01);

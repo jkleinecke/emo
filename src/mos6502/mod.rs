@@ -8,12 +8,19 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-mod cpu6502;
+pub use crate::common::{BitTest,Clocked,WORD,Word,Byte,Bit};
+
+mod cpu;
 mod operations;
 mod tests;
+mod registers;
+mod memory;
+mod dissassemble;
 
-pub use super::common::{BitTest,Clocked,WORD};
+pub use self::dissassemble::*;
+pub use self::memory::{Memory,Ram};
+pub use self::registers::*;
 
-pub use self::cpu6502::*;
+pub use self::cpu::*;
 pub use self::operations::*;
 

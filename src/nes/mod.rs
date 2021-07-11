@@ -3,7 +3,7 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use crate::mos6502::{Cpu6502,PC_START,Memory,State};
+use crate::mos6502::{Cpu,PC_START,Memory,State};
 use crate::common::Clocked;
 use crate::cartridge::Rom;
 use std::cell::RefCell;
@@ -11,7 +11,7 @@ use std::rc::Rc;
 
 pub struct Nes {
     pub sys_clocks:u64,
-    pub cpu:Cpu6502,
+    pub cpu:Cpu,
     pub bus:Rc<RefCell<Bus>>,
 }
 
@@ -25,7 +25,7 @@ impl Nes
     pub fn from_cartridge(cartridge: &'static Rom) -> Self 
     {
         let bus = Rc::new(RefCell::new(Bus::new(cartridge)));
-        let cpu = Cpu6502::new(bus.clone());
+        let cpu = Cpu::new(bus.clone());
 
         let mut nes = Nes {
             sys_clocks: 0,

@@ -38,7 +38,7 @@ pub enum RunMode {
 
 pub struct SnakeGame<'a> {
     rng: ThreadRng,
-    cpu: Cpu6502,
+    cpu: Cpu,
     memory: Rc<RefCell<SnakeMemory>>,
     event_pump: &'a mut sdl2::EventPump,
     canvas: &'a mut sdl2::render::Canvas<sdl2::video::Window>,
@@ -84,7 +84,7 @@ impl SnakeMemory {
 impl<'a> SnakeGame<'a> {
     pub fn new(rom_bytes: &Vec<u8>, event_pump: &'a mut sdl2::EventPump, canvas: &'a mut sdl2::render::Canvas<sdl2::video::Window>, texture: sdl2::render::Texture<'a>) -> Self {
         let memory = Rc::new(RefCell::new(SnakeMemory::new(rom_bytes)));
-        let cpu = Cpu6502::new(memory.clone());
+        let cpu = Cpu::new(memory.clone());
 
         SnakeGame {
             memory,
@@ -110,7 +110,7 @@ impl<'a> SnakeGame<'a> {
 
         let _ = self.canvas.window_mut().set_title("Snake Game - Space to Step CPU");
 
-        self.disassembly = self.dissassemble().unwrap();
+        self.disassembly = self.dissassemble();
 
         println!("Address  Hex Dump  Disassembly");
         println!("------------------------------");
@@ -142,6 +142,7 @@ impl<'a> SnakeGame<'a> {
                     }
                     Event::KeyDown { keycode: Some(Keycode::S), .. } => {
                         mem.write(0x00FF, 0x73);
+                        
                     }
                     Event::KeyDown { keycode: Some(Keycode::A), .. } => {
                         mem.write(0x00FF, 0x61);
@@ -224,14 +225,14 @@ impl<'a> SnakeGame<'a> {
 
     }
 
-    pub fn dissassemble(&self) -> Result<BTreeMap<u16,DecodedInstruction>,DissassemblyError>
+    pub fn dissassemble(&self) -> BTreeMap<u16, DecodedInstruction>
     {
         let mem = self.memory.borrow();
         let lo = mem.rom.read(0xFFFC & 0x7FFF);
         let hi = mem.rom.read(0xFFFD & 0x7FFF);
         let start = u16::make(hi,lo);
         let idx = start & 0x7FFF;
-        crate::mos6502::dissassemble(&self.memory.borrow().rom.prg_rom[idx as usize..(idx + 0x135) as usize], start)
+        crate::mos6502::dissassemble(&self.memory.borrow().rom.prg_rom[idx as usize..(idx + 0x135) as usize], start).unwrap()
     }
 }
 

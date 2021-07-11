@@ -28,6 +28,9 @@ pub use std::ops::{
 	Shr,
 	ShrAssign,
 };
+pub use std::convert::{
+    Into
+};
 
 #[macro_export]
 macro_rules! ternary {
