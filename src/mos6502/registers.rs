@@ -31,8 +31,6 @@ pub struct StatusRegister {
     pub unused: Bit,
     pub overflow: Bit,
     pub negative: Bit,
-
-    pub mask: Byte
 }
 
 impl PartialEq<StatusRegister> for StatusRegister {
@@ -99,35 +97,34 @@ impl From<Byte> for StatusRegister {
             unused: (src >> 5) & 1 == 1,
             overflow: (src >> 6) & 1 == 1,
             negative: (src >> 7) & 1 == 1,
-            mask: 0xFF,
         }
     }
 }
 
 impl BitAndAssign<Byte> for StatusRegister {
     fn bitand_assign(&mut self, rhs: Byte) {
-        self.carry &= (rhs >> 0) & (self.mask >> 0) & 1 == 1;
-        self.zero &= (rhs >> 1) & (self.mask >> 1) & 1 == 1;
-        self.interrupt &= (rhs >> 2) & (self.mask >> 2) & 1 == 1;
-        self.decimal &= (rhs >> 3) & (self.mask >> 3) & 1 == 1;
-        self.r#break &= (rhs >> 4) & (self.mask >> 4) & 1 == 1;
-        self.unused &= (rhs >> 5) & (self.mask >> 5) & 1 == 1;
-        self.overflow &= (rhs >> 6) & (self.mask >> 6) & 1 == 1;
-        self.negative &= (rhs >> 7) & (self.mask >> 7) & 1 == 1;
+        self.carry &= (rhs >> 0) & 1 == 1;
+        self.zero &= (rhs >> 1) & 1 == 1;
+        self.interrupt &= (rhs >> 2) & 1 == 1;
+        self.decimal &= (rhs >> 3) & 1 == 1;
+        self.r#break &= (rhs >> 4) & 1 == 1;
+        self.unused &= (rhs >> 5) & 1 == 1;
+        self.overflow &= (rhs >> 6) & 1 == 1;
+        self.negative &= (rhs >> 7) & 1 == 1;
     }
 }
 
 
 impl BitOrAssign<Byte> for StatusRegister {
     fn bitor_assign(&mut self, rhs: Byte) {
-        self.carry |= (rhs >> 0) & (self.mask >> 0) & 1 == 1;
-        self.zero |= (rhs >> 1) & (self.mask >> 1) & 1 == 1;
-        self.interrupt |= (rhs >> 2) & (self.mask >> 2) & 1 == 1;
-        self.decimal |= (rhs >> 3) & (self.mask >> 3) & 1 == 1;
-        self.r#break |= (rhs >> 4) & (self.mask >> 4) & 1 == 1;
-        self.unused |= (rhs >> 5) & (self.mask >> 5) & 1 == 1;
-        self.overflow |= (rhs >> 6) & (self.mask >> 6) & 1 == 1;
-        self.negative |= (rhs >> 7) & (self.mask >> 7) & 1 == 1;
+        self.carry |= (rhs >> 0) & 1 == 1;
+        self.zero |= (rhs >> 1) & 1 == 1;
+        self.interrupt |= (rhs >> 2) & 1 == 1;
+        self.decimal |= (rhs >> 3) & 1 == 1;
+        self.r#break |= (rhs >> 4) & 1 == 1;
+        self.unused |= (rhs >> 5) & 1 == 1;
+        self.overflow |= (rhs >> 6) & 1 == 1;
+        self.negative |= (rhs >> 7) & 1 == 1;
     }
 }
 
@@ -145,25 +142,10 @@ impl StatusRegister {
 }
 
 pub struct Registers {
-    pub ac: ValueRegister,
-    pub x: ValueRegister,
-    pub y: ValueRegister,
-
-    pub pcl: ValueRegister,
-    pub pch: ValueRegister,
-
-    pub sp: ValueRegister,
-
+    pub ac: Byte,
+    pub x: Byte,
+    pub y: Byte,
+    pub pc: Word,
+    pub sp: Byte,
     pub p: StatusRegister
-}
-
-
-pub struct ValueRegister {
-    pub value: Byte,
-}
-
-impl From<Byte> for ValueRegister {
-    fn from(val:Byte) -> Self {
-        Self { value: val }
-    }
 }

@@ -1,6 +1,6 @@
 #![allow(unused_imports)]
 
-use super::{Ram,Cpu,StatusRegister,Clocked,Word,WORD};
+use super::{Ram,MemoryMapped,Cpu,CpuContext,StatusRegister,Clocked,Word,WORD};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -8,88 +8,86 @@ use std::rc::Rc;
 mod test {
     use super::*;
 
-    fn new_cpu(program: &Vec<u8>) -> Cpu6502
+    fn new_cpu(program: &Vec<u8>) -> (Cpu,Ram)
     {
         let mut ram = Ram::new();
         ram.data[0x600 .. (0x600 + program.len())].copy_from_slice(&program[..]);
+        let mut cpu = Cpu::new();
+        cpu.regs.pc = 0x600;
+        cpu.regs.p = StatusRegister::from("nv-Bdizc");
 
-        let bus = Rc::new(RefCell::new(ram));
-        let mut cpu = Cpu6502::new(bus.clone());
-        cpu.pc = 0x600;
-        cpu.status = StatusRegister::from("nv-Bdizc");
-
-        cpu 
+        (cpu,ram)
     }
 
-    fn run_instr(cpu: &mut Cpu6502, num_instr: u32) {
+    fn run_instr(cpu: &mut Cpu, ram: &mut Ram, num_instr: u32) {
         for _i in 0..num_instr {
             cpu.ir_cycles = 0;  // don't care about cycle accuracy here
-            cpu.clock();
+            cpu.clock(ram);
         }
     }
 
     #[test]
     fn cpu_op_lda_imm() 
     {
-        let mut cpu = new_cpu(&vec![0xa9,0x05]);
+        let (mut cpu,mut ram) = new_cpu(&vec![0xa9,0x05]);
 
-        run_instr(&mut cpu, 1);
+        run_instr(&mut cpu,&mut ram, 1);
 
-        assert_eq!(cpu.a, 0x05);
-        assert_eq!(cpu.status.zero, false);
-        assert_eq!(cpu.status.negative, false);
+        assert_eq!(cpu.regs.ac, 0x05);
+        assert_eq!(cpu.regs.p.zero, false);
+        assert_eq!(cpu.regs.p.negative, false);
     }
 
     #[test]
     fn cpu_op_lda_imm_zero() 
     {
-        let mut cpu = new_cpu(&vec![0xa9,0x00]);
+        let (mut cpu,mut ram) = new_cpu(&vec![0xa9,0x00]);
         
-        run_instr(&mut cpu, 1);
+        run_instr(&mut cpu,&mut ram, 1);
 
-        assert_eq!(cpu.a, 0x00);
-        assert_eq!(cpu.status.zero, true);
-        assert_eq!(cpu.status.negative, false);
+        assert_eq!(cpu.regs.ac, 0x00);
+        assert_eq!(cpu.regs.p.zero, true);
+        assert_eq!(cpu.regs.p.negative, false);
     }
 
     #[test]
     fn cpu_op_lda_imm_negative() 
     {
-        let mut cpu = new_cpu(&vec![0xa9,0xFF]);
+        let (mut cpu,mut ram) = new_cpu(&vec![0xa9,0xFF]);
         
-        run_instr(&mut cpu, 1);
+        run_instr(&mut cpu,&mut ram, 1);
 
-        assert_eq!(cpu.a, 0xFF);
-        assert_eq!(cpu.status.zero, false);
-        assert_eq!(cpu.status.negative, true);
+        assert_eq!(cpu.regs.ac, 0xFF);
+        assert_eq!(cpu.regs.p.zero, false);
+        assert_eq!(cpu.regs.p.negative, true);
     }
 
     #[test]
     fn cpu_op_lda_abs() 
     {
         let addr = 0x0603;
-        let mut cpu = new_cpu(&vec![0xad, addr.lo(), addr.hi(), 0x05]);
+        let (mut cpu,mut ram) = new_cpu(&vec![0xad, addr.lo(), addr.hi(), 0x05]);
         
-        run_instr(&mut cpu, 1);
+        run_instr(&mut cpu,&mut ram, 1);
 
-        assert_eq!(cpu.a, 0x05);
-        assert_eq!(cpu.status.zero, false);
-        assert_eq!(cpu.status.negative, false);
+        assert_eq!(cpu.regs.ac, 0x05);
+        assert_eq!(cpu.regs.p.zero, false);
+        assert_eq!(cpu.regs.p.negative, false);
     }
 
     #[test]
     fn cpu_op_tax() 
     {
-        let mut cpu = new_cpu(&vec![ 
+        let (mut cpu,mut ram) = new_cpu(&vec![ 
             0xa9,0x42,  // LDA 2
             0xaa        // TAX 2
             ]);
         
-        run_instr(&mut cpu, 2);
+        run_instr(&mut cpu,&mut ram, 2);
 
-        assert_eq!(cpu.x, 0x42);
-        assert_eq!(cpu.status.zero, false);
-        assert_eq!(cpu.status.negative, false);
+        assert_eq!(cpu.regs.x, 0x42);
+        assert_eq!(cpu.regs.p.zero, false);
+        assert_eq!(cpu.regs.p.negative, false);
     }
 
     #[test]
@@ -105,13 +103,13 @@ mod test {
         
         prog[82] = 0x66; // 0x10 + 0x42 value 0x66 
 
-        let mut cpu = new_cpu(&prog.to_vec());
+        let (mut cpu,mut ram) = new_cpu(&prog.to_vec());
         
-        run_instr(&mut cpu, 3);   
+        run_instr(&mut cpu,&mut ram, 3);   
 
-        assert_eq!(cpu.a, 0x66);
-        assert_eq!(cpu.status.zero, false);
-        assert_eq!(cpu.status.negative, false);
+        assert_eq!(cpu.regs.ac, 0x66);
+        assert_eq!(cpu.regs.p.zero, false);
+        assert_eq!(cpu.regs.p.negative, false);
     }
 
     #[test]
@@ -127,24 +125,22 @@ mod test {
         
         prog[271] = 0x66; // 0x10 + 0xFF value 0x66 
 
-        let mut cpu = new_cpu(&prog.to_vec());
+        let (mut cpu,mut ram) = new_cpu(&prog.to_vec());
         
-        run_instr(&mut cpu, 3); // still only 3 instructions
+        run_instr(&mut cpu,&mut ram, 3); // still only 3 instructions
         
-        assert_eq!(cpu.a, 0x66);
-        assert_eq!(cpu.status.carry, false);
-        assert_eq!(cpu.status.zero, false);
-        assert_eq!(cpu.status.negative, false);
+        assert_eq!(cpu.regs.ac, 0x66);
+        assert_eq!(cpu.regs.p.carry, false);
+        assert_eq!(cpu.regs.p.zero, false);
+        assert_eq!(cpu.regs.p.negative, false);
     }
 
     
-    fn run_until_break(cpu: &mut Cpu6502) {
-        let mem = cpu.memory_bus.clone();
-
-        while mem.borrow_mut().read(cpu.pc) != 0x00
+    fn run_until_break(cpu: &mut Cpu, ram: &mut Ram) {
+        while ram.read(cpu.regs.pc) != 0x00
         {
             cpu.ir_cycles = 0;  // don't care about cycle accuracy here
-            cpu.clock();
+            cpu.clock(ram);
         }
     }
 
@@ -161,21 +157,20 @@ mod test {
         // $0607    8d 01 02  STA $0201
         // $060a    a9 08     LDA #$08
         // $060c    8d 02 02  STA $0202
-        let mut cpu = new_cpu(&vec![ 0xa9, 0x01, 0x8d, 0x00, 0x02, 0xa9, 0x05, 0x8d, 0x01, 0x02, 0xa9, 0x08, 0x8d, 0x02, 0x02 ]);
+        let (mut cpu,mut ram) = new_cpu(&vec![ 0xa9, 0x01, 0x8d, 0x00, 0x02, 0xa9, 0x05, 0x8d, 0x01, 0x02, 0xa9, 0x08, 0x8d, 0x02, 0x02 ]);
         
-        run_until_break(&mut cpu);
+        run_until_break(&mut cpu,&mut ram);
 
-        assert_eq!(cpu.a, 0x08);
-        assert_eq!(cpu.x, 0x00);
-        assert_eq!(cpu.y, 0x00);
-        assert_eq!(cpu.sp, 0xff);
-        assert_eq!(cpu.pc, 0x60F);
-        assert_eq!(cpu.status, StatusRegister::from("nv-Bdizc"));
+        assert_eq!(cpu.regs.ac, 0x08);
+        assert_eq!(cpu.regs.x, 0x00);
+        assert_eq!(cpu.regs.y, 0x00);
+        assert_eq!(cpu.regs.sp, 0xff);
+        assert_eq!(cpu.regs.pc, 0x60F);
+        assert_eq!(cpu.regs.p, StatusRegister::from("nv-Bdizc"));
 
-        let mem = cpu.memory_bus.borrow();
-        assert_eq!(mem.read(0x200), 0x01);
-        assert_eq!(mem.read(0x201), 0x05);
-        assert_eq!(mem.read(0x202), 0x08);
+        assert_eq!(ram.read(0x200), 0x01);
+        assert_eq!(ram.read(0x201), 0x05);
+        assert_eq!(ram.read(0x202), 0x08);
     }
 
     #[test]
@@ -188,16 +183,16 @@ mod test {
         // $0603    e8        INX 
         // $0604    69 c4     ADC #$c4
         // $0606    00        BRK
-        let mut cpu = new_cpu(&vec![ 0xa9,0xc0,0xaa,0xe8,0x69,0xc4 ]);
+        let (mut cpu,mut ram) = new_cpu(&vec![ 0xa9,0xc0,0xaa,0xe8,0x69,0xc4 ]);
         
-        run_until_break(&mut cpu);
+        run_until_break(&mut cpu,&mut ram);
 
-        assert_eq!(cpu.a, 0x84);
-        assert_eq!(cpu.x, 0xc1);
-        assert_eq!(cpu.y, 0x00);
-        assert_eq!(cpu.sp, 0xff);
-        assert_eq!(cpu.pc, 0x606);
-        assert_eq!(cpu.status, StatusRegister::from("Nv-BdizC"));
+        assert_eq!(cpu.regs.ac, 0x84);
+        assert_eq!(cpu.regs.x, 0xc1);
+        assert_eq!(cpu.regs.y, 0x00);
+        assert_eq!(cpu.regs.sp, 0xff);
+        assert_eq!(cpu.regs.pc, 0x606);
+        assert_eq!(cpu.regs.p, StatusRegister::from("Nv-BdizC"));
     }
     
     #[test]
@@ -208,19 +203,18 @@ mod test {
         // $0600    a9 80     LDA #$80
         // $0602    85 01     STA $01
         // $0604    65 01     ADC $01
-        let mut cpu = new_cpu(&vec![ 0xa9,0x80,0x85,0x01,0x65,0x01 ]);
+        let (mut cpu,mut ram) = new_cpu(&vec![ 0xa9,0x80,0x85,0x01,0x65,0x01 ]);
         
-        run_until_break(&mut cpu);
+        run_until_break(&mut cpu,&mut ram);
 
-        assert_eq!(cpu.a, 0x00);
-        assert_eq!(cpu.x, 0x00);
-        assert_eq!(cpu.y, 0x00);
-        assert_eq!(cpu.sp, 0xff);
-        assert_eq!(cpu.pc, 0x606);
-        assert_eq!(cpu.status, StatusRegister::from("nV-BdiZC"));
+        assert_eq!(cpu.regs.ac, 0x00);
+        assert_eq!(cpu.regs.x, 0x00);
+        assert_eq!(cpu.regs.y, 0x00);
+        assert_eq!(cpu.regs.sp, 0xff);
+        assert_eq!(cpu.regs.pc, 0x606);
+        assert_eq!(cpu.regs.p, StatusRegister::from("nV-BdiZC"));
         
-        let mem = cpu.memory_bus.borrow();
-        assert_eq!(mem.read(0x01), 0x80);
+        assert_eq!(ram.read(0x01), 0x80);
     }
     
     #[test]
@@ -235,20 +229,19 @@ mod test {
         // $0608    d0 f8     BNE $0602
         // $060a    8e 01 02  STX $0201
         // $060d    00        BRK 
-        let mut cpu = new_cpu(&vec![ 0xa2,0x08,0xca,0x8e,0x00,0x02,0xe0,0x03,0xd0,0xf8,0x8e,0x01,0x02 ]);
+        let (mut cpu,mut ram) = new_cpu(&vec![ 0xa2,0x08,0xca,0x8e,0x00,0x02,0xe0,0x03,0xd0,0xf8,0x8e,0x01,0x02 ]);
         
-        run_until_break(&mut cpu);
+        run_until_break(&mut cpu,&mut ram);
 
-        assert_eq!(cpu.a, 0x00);
-        assert_eq!(cpu.x, 0x03);
-        assert_eq!(cpu.y, 0x00);
-        assert_eq!(cpu.sp, 0xff);
-        assert_eq!(cpu.pc, 0x60d);
-        assert_eq!(cpu.status, StatusRegister::from("nv-BdiZC"));
+        assert_eq!(cpu.regs.ac, 0x00);
+        assert_eq!(cpu.regs.x, 0x03);
+        assert_eq!(cpu.regs.y, 0x00);
+        assert_eq!(cpu.regs.sp, 0xff);
+        assert_eq!(cpu.regs.pc, 0x60d);
+        assert_eq!(cpu.regs.p, StatusRegister::from("nv-BdiZC"));
         
-        let mem = cpu.memory_bus.borrow();
-        assert_eq!(mem.read(0x200), 0x03);
-        assert_eq!(mem.read(0x201), 0x03);
+        assert_eq!(ram.read(0x200), 0x03);
+        assert_eq!(ram.read(0x201), 0x03);
     }
 
     #[test]
@@ -261,20 +254,19 @@ mod test {
         // $0604    a9 cc     LDA #$cc
         // $0606    85 f1     STA $f1
         // $0608    6c f0 00  JMP ($00f0)
-        let mut cpu = new_cpu(&vec![ 0xa9,0x01,0x85,0xf0,0xa9,0xcc,0x85,0xf1,0x6c,0xf0,0x00 ]);
+        let (mut cpu,mut ram) = new_cpu(&vec![ 0xa9,0x01,0x85,0xf0,0xa9,0xcc,0x85,0xf1,0x6c,0xf0,0x00 ]);
         
-        run_until_break(&mut cpu);
+        run_until_break(&mut cpu,&mut ram);
 
-        assert_eq!(cpu.a, 0xcc);
-        assert_eq!(cpu.x, 0x00);
-        assert_eq!(cpu.y, 0x00);
-        assert_eq!(cpu.sp, 0xff);
-        assert_eq!(cpu.pc, 0xcc01);
-        assert_eq!(cpu.status, StatusRegister::from("Nv-Bdizc"));
+        assert_eq!(cpu.regs.ac, 0xcc);
+        assert_eq!(cpu.regs.x, 0x00);
+        assert_eq!(cpu.regs.y, 0x00);
+        assert_eq!(cpu.regs.sp, 0xff);
+        assert_eq!(cpu.regs.pc, 0xcc01);
+        assert_eq!(cpu.regs.p, StatusRegister::from("Nv-Bdizc"));
         
-        let mem = cpu.memory_bus.borrow();
-        assert_eq!(mem.read(0x00f0), 0x01);
-        assert_eq!(mem.read(0x00f1), 0xcc);
+        assert_eq!(ram.read(0x00f0), 0x01);
+        assert_eq!(ram.read(0x00f1), 0xcc);
     }
 
     
@@ -291,21 +283,20 @@ mod test {
         // $060a    a0 0a     LDY #$0a
         // $060c    8c 05 07  STY $0705
         // $060f    a1 00     LDA ($00,X)
-        let mut cpu = new_cpu(&vec![ 0xa2,0x01,0xa9,0x05,0x85,0x01,0xa9,0x07,0x85,0x02,0xa0,0x0a,0x8c,0x05,0x07,0xa1 ]);
+        let (mut cpu,mut ram) = new_cpu(&vec![ 0xa2,0x01,0xa9,0x05,0x85,0x01,0xa9,0x07,0x85,0x02,0xa0,0x0a,0x8c,0x05,0x07,0xa1 ]);
         
-        run_until_break(&mut cpu);
+        run_until_break(&mut cpu,&mut ram);
 
-        assert_eq!(cpu.a, 0x0a);
-        assert_eq!(cpu.x, 0x01);
-        assert_eq!(cpu.y, 0x0a);
-        assert_eq!(cpu.sp, 0xff);
-        assert_eq!(cpu.pc, 0x0611);
-        assert_eq!(cpu.status, StatusRegister::from("nv-Bdizc"));
+        assert_eq!(cpu.regs.ac, 0x0a);
+        assert_eq!(cpu.regs.x, 0x01);
+        assert_eq!(cpu.regs.y, 0x0a);
+        assert_eq!(cpu.regs.sp, 0xff);
+        assert_eq!(cpu.regs.pc, 0x0611);
+        assert_eq!(cpu.regs.p, StatusRegister::from("nv-Bdizc"));
         
-        let mem = cpu.memory_bus.borrow();
-        assert_eq!(mem.read(0x0001), 0x05);
-        assert_eq!(mem.read(0x0002), 0x07);
-        assert_eq!(mem.read(0x0705), 0x0a);
+        assert_eq!(ram.read(0x0001), 0x05);
+        assert_eq!(ram.read(0x0002), 0x07);
+        assert_eq!(ram.read(0x0705), 0x0a);
     }
 
     
@@ -322,22 +313,21 @@ mod test {
         // $060a    a2 0a     LDX #$0a
         // $060c    8e 04 07  STX $0704
         // $060f    b1 01     LDA ($01),Y
-        let mut cpu = new_cpu(&vec![ 0xa0,0x01,0xa9,0x03,0x85,0x01,0xa9,0x07,0x85,0x02,0xa2,0x0a,0x8e,0x04,0x07,0xb1 
+        let (mut cpu,mut ram) = new_cpu(&vec![ 0xa0,0x01,0xa9,0x03,0x85,0x01,0xa9,0x07,0x85,0x02,0xa2,0x0a,0x8e,0x04,0x07,0xb1 
             ,0x01 ]);
         
-        run_until_break(&mut cpu);
+        run_until_break(&mut cpu,&mut ram);
 
-        assert_eq!(cpu.a, 0x0a);
-        assert_eq!(cpu.x, 0x0a);
-        assert_eq!(cpu.y, 0x01);
-        assert_eq!(cpu.sp, 0xff);
-        assert_eq!(cpu.pc, 0x0611);
-        assert_eq!(cpu.status, StatusRegister::from("nv-Bdizc"));
+        assert_eq!(cpu.regs.ac, 0x0a);
+        assert_eq!(cpu.regs.x, 0x0a);
+        assert_eq!(cpu.regs.y, 0x01);
+        assert_eq!(cpu.regs.sp, 0xff);
+        assert_eq!(cpu.regs.pc, 0x0611);
+        assert_eq!(cpu.regs.p, StatusRegister::from("nv-Bdizc"));
         
-        let mem = cpu.memory_bus.borrow();
-        assert_eq!(mem.read(0x0001), 0x03);
-        assert_eq!(mem.read(0x0002), 0x07);
-        assert_eq!(mem.read(0x0704), 0x0a);
+        assert_eq!(ram.read(0x0001), 0x03);
+        assert_eq!(ram.read(0x0002), 0x07);
+        assert_eq!(ram.read(0x0704), 0x0a);
     }
 
     
@@ -360,28 +350,26 @@ mod test {
         // $0613    c8        INY 
         // $0614    c0 20     CPY #$20
         // $0616    d0 f7     BNE $060f
-        let mut cpu = new_cpu(&vec![ 0xa2,0x00,0xa0,0x00,0x8a,0x99,0x00,0x02,0x48,0xe8,0xc8,0xc0,0x10,0xd0,0xf5,0x68 
+        let (mut cpu,mut ram) = new_cpu(&vec![ 0xa2,0x00,0xa0,0x00,0x8a,0x99,0x00,0x02,0x48,0xe8,0xc8,0xc0,0x10,0xd0,0xf5,0x68 
             ,0x99,0x00,0x02,0xc8,0xc0,0x20,0xd0,0xf7 ]);
         
-        run_until_break(&mut cpu);
+        run_until_break(&mut cpu,&mut ram);
 
-        assert_eq!(cpu.a, 0x00);
-        assert_eq!(cpu.x, 0x10);
-        assert_eq!(cpu.y, 0x20);
-        assert_eq!(cpu.sp, 0xff);
-        assert_eq!(cpu.pc, 0x0618);
-        assert_eq!(cpu.status, StatusRegister::from("nv-BdiZC"));
+        assert_eq!(cpu.regs.ac, 0x00);
+        assert_eq!(cpu.regs.x, 0x10);
+        assert_eq!(cpu.regs.y, 0x20);
+        assert_eq!(cpu.regs.sp, 0xff);
+        assert_eq!(cpu.regs.pc, 0x0618);
+        assert_eq!(cpu.regs.p, StatusRegister::from("nv-BdiZC"));
         
-        let mem = cpu.memory_bus.borrow();
-
         for i in 0..16
         {
-            assert_eq!(mem.read(0x0200 + i), i as u8);
+            assert_eq!(ram.read(0x0200 + i), i as u8);
         }
 
         for i in 0..16
         {
-            assert_eq!(mem.read(0x0210 + i), 15 - i as u8)
+            assert_eq!(ram.read(0x0210 + i), 15 - i as u8)
         }
     }
 
@@ -401,17 +389,17 @@ mod test {
         // $060f    d0 fb     BNE $060c
         // $0611    60        RTS 
         // $0612    00        BRK 
-        let mut cpu = new_cpu(&vec![ 0x20,0x09,0x06,0x20,0x0c,0x06,0x20,0x12,0x06,0xa2,0x00,0x60,0xe8,0xe0,0x05,0xd0 
+        let (mut cpu,mut ram) = new_cpu(&vec![ 0x20,0x09,0x06,0x20,0x0c,0x06,0x20,0x12,0x06,0xa2,0x00,0x60,0xe8,0xe0,0x05,0xd0 
             ,0xfb,0x60,0x00  ]);
         
-        run_until_break(&mut cpu);
+        run_until_break(&mut cpu,&mut ram);
 
-        assert_eq!(cpu.a, 0x00);
-        assert_eq!(cpu.x, 0x05);
-        assert_eq!(cpu.y, 0x00);
-        assert_eq!(cpu.sp, 0xfd);
-        assert_eq!(cpu.pc, 0x0612);
-        assert_eq!(cpu.status, StatusRegister::from("nv-BdiZC"));
+        assert_eq!(cpu.regs.ac, 0x00);
+        assert_eq!(cpu.regs.x, 0x05);
+        assert_eq!(cpu.regs.y, 0x00);
+        assert_eq!(cpu.regs.sp, 0xfd);
+        assert_eq!(cpu.regs.pc, 0x0612);
+        assert_eq!(cpu.regs.p, StatusRegister::from("nv-BdiZC"));
     }
 
     #[test]
@@ -431,20 +419,19 @@ mod test {
         // $0612    00        BRK 
         // $0613    00        BRK 
         // $0614    00        BRK 
-        let mut cpu = new_cpu(&vec![ 0xa9,0x01,0x85,0x02,0xa9,0x77,0xc9,0x77,0xa9,0x04,0x24,0x02,
+        let (mut cpu,mut ram) = new_cpu(&vec![ 0xa9,0x01,0x85,0x02,0xa9,0x77,0xc9,0x77,0xa9,0x04,0x24,0x02,
                                      0xd0,0x06,0xa9,0x01,0x85,0x02,0x00,0x00,0x00 ]);
         
-        run_until_break(&mut cpu);
+        run_until_break(&mut cpu,&mut ram);
 
-        assert_eq!(cpu.a, 0x01);
-        assert_eq!(cpu.x, 0x00);
-        assert_eq!(cpu.y, 0x00);
-        assert_eq!(cpu.sp, 0xff);
-        assert_eq!(cpu.pc, 0x0612);
-        assert_eq!(cpu.status, StatusRegister::from("nv-BdizC"));
+        assert_eq!(cpu.regs.ac, 0x01);
+        assert_eq!(cpu.regs.x, 0x00);
+        assert_eq!(cpu.regs.y, 0x00);
+        assert_eq!(cpu.regs.sp, 0xff);
+        assert_eq!(cpu.regs.pc, 0x0612);
+        assert_eq!(cpu.regs.p, StatusRegister::from("nv-BdizC"));
 
-        let mem = cpu.memory_bus.borrow();
-        assert_eq!(mem.read(0x0002), 0x01);
+        assert_eq!(ram.read(0x0002), 0x01);
         
     }
 
@@ -466,17 +453,17 @@ mod test {
         // $060e    00        BRK 
         // $060f    00        BRK 
         // $0610    a9 42     LDA #$42 
-        let mut cpu = new_cpu(&vec![ 0xa2,0x01,0xe8,0xe0,0x02,0xf0,0xfb,0xe0,0x03,0xf0,0x05,0x00,
+        let (mut cpu,mut ram) = new_cpu(&vec![ 0xa2,0x01,0xe8,0xe0,0x02,0xf0,0xfb,0xe0,0x03,0xf0,0x05,0x00,
                                      0x00,0x00,0x00,0x00,0xa9,0x42 ]);
         
-        run_until_break(&mut cpu);
+        run_until_break(&mut cpu,&mut ram);
 
-        assert_eq!(cpu.a, 0x42);
-        assert_eq!(cpu.x, 0x03);
-        assert_eq!(cpu.y, 0x00);
-        assert_eq!(cpu.sp, 0xff);
-        assert_eq!(cpu.pc, 0x0612);
-        assert_eq!(cpu.status, StatusRegister::from("nv-BdizC"));
+        assert_eq!(cpu.regs.ac, 0x42);
+        assert_eq!(cpu.regs.x, 0x03);
+        assert_eq!(cpu.regs.y, 0x00);
+        assert_eq!(cpu.regs.sp, 0xff);
+        assert_eq!(cpu.regs.pc, 0x0612);
+        assert_eq!(cpu.regs.p, StatusRegister::from("nv-BdizC"));
     }
 
     #[test]
@@ -525,7 +512,7 @@ mod test {
         // $0648    85 02     STA $02
         // $064a    60        RTS 
         // $064b    60        RTS 
-        let mut cpu = new_cpu(&vec![ 
+        let (mut cpu,mut ram) = new_cpu(&vec![ 
             0xa9,0x02,0x85,0x02,0xa9,0x77,0x85,0xff,0x20,0x0c,0x06,0x00,0xa5,0xff,0xc9,0x77, 
             0xf0,0x0d,0xc9,0x64,0xf0,0x14,0xc9,0x73,0xf0,0x1b,0xc9,0x61,0xf0,0x22,0x60,0xa9, 
             0x04,0x24,0x02,0xd0,0x26,0xa9,0x01,0x85,0x02,0x60,0xa9,0x08,0x24,0x02,0xd0,0x1b, 
@@ -534,17 +521,16 @@ mod test {
             ]);
 
     
-        run_until_break(&mut cpu);
+        run_until_break(&mut cpu,&mut ram);
 
-        assert_eq!(cpu.a, 0x01);
-        assert_eq!(cpu.x, 0x00);
-        assert_eq!(cpu.y, 0x00);
-        assert_eq!(cpu.sp, 0xff);
-        assert_eq!(cpu.pc, 0x060b);
-        assert_eq!(cpu.status, StatusRegister::from("nv-BdizC"));
+        assert_eq!(cpu.regs.ac, 0x01);
+        assert_eq!(cpu.regs.x, 0x00);
+        assert_eq!(cpu.regs.y, 0x00);
+        assert_eq!(cpu.regs.sp, 0xff);
+        assert_eq!(cpu.regs.pc, 0x060b);
+        assert_eq!(cpu.regs.p, StatusRegister::from("nv-BdizC"));
 
-        let mem = cpu.memory_bus.borrow();
-        assert_eq!(mem.read(0x0002), 0x01);
-        assert_eq!(mem.read(0x00FF), 0x77);
+        assert_eq!(ram.read(0x0002), 0x01);
+        assert_eq!(ram.read(0x00FF), 0x77);
     }
 }

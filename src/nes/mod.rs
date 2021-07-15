@@ -3,16 +3,14 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use crate::mos6502::{Cpu,PC_START,Memory,State};
+use crate::mos6502::{Cpu,PC_START,MemoryMapped,State};
 use crate::common::Clocked;
 use crate::cartridge::Rom;
-use std::cell::RefCell;
-use std::rc::Rc;
 
 pub struct Nes {
     pub sys_clocks:u64,
     pub cpu:Cpu,
-    pub bus:Rc<RefCell<Bus>>,
+    pub bus:Bus,
 }
 
 pub struct Bus {
@@ -24,13 +22,13 @@ impl Nes
 {
     pub fn from_cartridge(cartridge: &'static Rom) -> Self 
     {
-        let bus = Rc::new(RefCell::new(Bus::new(cartridge)));
-        let cpu = Cpu::new(bus.clone());
+        let bus = Bus::new(cartridge);
+        let cpu = Cpu::new();
 
         let mut nes = Nes {
             sys_clocks: 0,
             cpu: cpu,
-            bus: bus.clone(),
+            bus: bus,
         };
 
         nes.reset();
@@ -40,7 +38,7 @@ impl Nes
 
     pub fn reset(&mut self)
     {
-        self.cpu.reset();
+        //self.cpu.reset();
     }
 
     pub fn run(&mut self)
@@ -80,7 +78,7 @@ impl Nes
 
     pub fn clock(&mut self)
     {
-        self.cpu.clock();
+        self.cpu.clock(&mut self.bus);
         self.sys_clocks = self.sys_clocks.wrapping_add(1);
     }
 }
@@ -122,7 +120,7 @@ const PPU_ADDR_END: u16 = 0x3FFF;
 const CARTRIDGE_ADDR: u16 = 0x8000;
 const CARTRIDGE_ADDR_END: u16 = 0xFFFF;
 
-impl Memory for Bus {
+impl MemoryMapped for Bus {
 
     fn read(&self, addr:u16) -> u8 {
         match addr {

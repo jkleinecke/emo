@@ -1,8 +1,4 @@
 
-use std::collections::BTreeMap;
-use std::cell::RefCell;
-use std::rc::Rc;
-
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::render::{Texture};
@@ -39,12 +35,11 @@ pub enum RunMode {
 pub struct SnakeGame<'a> {
     rng: ThreadRng,
     cpu: Cpu,
-    memory: Rc<RefCell<SnakeMemory>>,
+    memory: SnakeMemory,
     event_pump: &'a mut sdl2::EventPump,
     canvas: &'a mut sdl2::render::Canvas<sdl2::video::Window>,
     texture: Texture<'a>,
     pub run_mode: RunMode,
-    disassembly: BTreeMap<u16, DecodedInstruction>,
     vram: [Byte;32*32*3],
 }
 
@@ -54,7 +49,7 @@ struct SnakeMemory {
     rom: Rom,
 }
 
-impl Memory for SnakeMemory {
+impl MemoryMapped for SnakeMemory {
     fn read(&self, addr:Word) -> Byte {
         match addr
         {
@@ -66,7 +61,9 @@ impl Memory for SnakeMemory {
     fn write(&mut self, addr:Word, value:Byte) {
         match addr
         {
-            0x0000 ..= 0x1FFF => self.ram[(addr & 0x7FF) as usize] = value,
+            0x0000..= 0x1FFF => { 
+                self.ram[(addr & 0x7FF) as usize] = value
+            },
             _ => { panic!("Invalid write") },
         };
     }
@@ -83,8 +80,8 @@ impl SnakeMemory {
 
 impl<'a> SnakeGame<'a> {
     pub fn new(rom_bytes: &Vec<u8>, event_pump: &'a mut sdl2::EventPump, canvas: &'a mut sdl2::render::Canvas<sdl2::video::Window>, texture: sdl2::render::Texture<'a>) -> Self {
-        let memory = Rc::new(RefCell::new(SnakeMemory::new(rom_bytes)));
-        let cpu = Cpu::new(memory.clone());
+        let memory = SnakeMemory::new(rom_bytes);
+        let cpu = Cpu::new();
 
         SnakeGame {
             memory,
@@ -94,7 +91,6 @@ impl<'a> SnakeGame<'a> {
             canvas,
             texture,
             run_mode: RunMode::Run,
-            disassembly: BTreeMap::new(),
             vram: [0;32*32*3],
         }
     }
@@ -102,15 +98,13 @@ impl<'a> SnakeGame<'a> {
 
     pub fn init(&mut self) 
     {
-        self.cpu.reset();
+        self.cpu.reset = true;
 
         self.vram = [0;32*32*3];
         self.texture.update(None, &self.vram, 32 * 3).unwrap();
         self.canvas.copy(&self.texture, None, None).unwrap();
 
         let _ = self.canvas.window_mut().set_title("Snake Game - Space to Step CPU");
-
-        self.disassembly = self.dissassemble();
 
         println!("Address  Hex Dump  Disassembly");
         println!("------------------------------");
@@ -123,11 +117,9 @@ impl<'a> SnakeGame<'a> {
             RunMode::StepInstruction => false,
         };
 
-        {
-            let mut mem = self.memory.borrow_mut();
-            
+        {            
             // update the random memory generator location
-            mem.write(0x00FE, self.rng.gen_range(1,16) as u8);
+            self.memory.write(0x00FE, self.rng.gen_range(1,16) as u8);
 
             // handle user input
             for event in self.event_pump.poll_iter()
@@ -138,17 +130,17 @@ impl<'a> SnakeGame<'a> {
                         std::process::exit(0);
                     },
                     Event::KeyDown { keycode: Some(Keycode::W), .. } => {
-                        mem.write(0x00FF, 0x77);
+                        self.memory.write(0x00FF, 0x77);
                     }
                     Event::KeyDown { keycode: Some(Keycode::S), .. } => {
-                        mem.write(0x00FF, 0x73);
+                        self.memory.write(0x00FF, 0x73);
                         
                     }
                     Event::KeyDown { keycode: Some(Keycode::A), .. } => {
-                        mem.write(0x00FF, 0x61);
+                        self.memory.write(0x00FF, 0x61);
                     }
                     Event::KeyDown { keycode: Some(Keycode::D), .. } => {
-                        mem.write(0x00FF, 0x64);
+                        self.memory.write(0x00FF, 0x64);
                     }
                     Event::KeyDown { keycode: Some(Keycode::Space), .. } => {
                         self.run_mode = RunMode::StepInstruction;
@@ -166,22 +158,19 @@ impl<'a> SnakeGame<'a> {
 
         if should_step_cpu
         {
-            let last_pc = self.cpu.pc;
             // clock the cpu
             self.cpu.ir_cycles = 0;  // snake doesn't rely on cycle counting, so just go for it here
-            self.cpu.clock();
-
-            let mem = self.memory.borrow();
+            self.cpu.clock(&mut self.memory);
 
             let state = self.cpu.copy_state();
             
-            let instr = self.disassembly.get(&last_pc).unwrap();
+            let instr = state.instruction;
             
-            let instr_str = format!("{:#06x}:  {:02x} {:02x} {:02x}   {} {}", instr.address, instr.dump[0], instr.dump[1], instr.dump[2], instr.code.opcode, instr.operand);
+            let instr_str = format!("{}", instr);
 
             println!("{} => {}", instr_str, state);
 
-            let next_instr = last_pc + instr.code.opsize as u16;
+            let next_instr = instr.ir_address + instr.opsize as u16;
             if next_instr != state.pc
             {
                 // we must have made a jump
@@ -189,50 +178,39 @@ impl<'a> SnakeGame<'a> {
             }
 
             // see if anything changed on the screen
-            if state.ir == 0x81
+            
+            let mut did_screen_change = false;
+            for addr in 0x200..0x600
             {
-                let mut did_screen_change = false;
-                for addr in 0x200..0x600
+                let value = self.memory.ram[addr];
+                let (r,g,b) = color(value).rgb();
+                let pixel_idx = ((addr - 0x200) * 3) as usize; // or & 0x1FF?
+                if self.vram[pixel_idx] != r || self.vram[pixel_idx+1] != g || self.vram[pixel_idx+2] != b
                 {
-                    let value = mem.ram[addr];
-                    let (r,g,b) = color(value).rgb();
-                    let pixel_idx = ((addr - 0x200) * 3) as usize; // or & 0x1FF?
-                    if self.vram[pixel_idx] != r || self.vram[pixel_idx+1] != g || self.vram[pixel_idx+2] != b
-                    {
-                        self.vram[pixel_idx+0] = r;
-                        self.vram[pixel_idx+1] = g;
-                        self.vram[pixel_idx+2] = b;
-                        did_screen_change = true;
-                    }
-                }
-                    
-                // update the screen if anything changed
-                if did_screen_change
-                {
-                    println!("VRAM DIRTY!");
-                    
-                    self.texture.update(None, &self.vram, 32 * 3).unwrap();
-                            
-                    self.canvas.copy(&self.texture, None, None).unwrap();
-                    self.canvas.present();
+                    self.vram[pixel_idx+0] = r;
+                    self.vram[pixel_idx+1] = g;
+                    self.vram[pixel_idx+2] = b;
+                    did_screen_change = true;
                 }
             }
+                
+            // update the screen if anything changed
+            if did_screen_change
+            {
+                println!("VRAM DIRTY!");
+                
+                self.texture.update(None, &self.vram, 32 * 3).unwrap();
+                        
+                self.canvas.copy(&self.texture, None, None).unwrap();
+                self.canvas.present();
+            }
+        
         }
         else
         {
             self.canvas.present();
         }
 
-    }
-
-    pub fn dissassemble(&self) -> BTreeMap<u16, DecodedInstruction>
-    {
-        let mem = self.memory.borrow();
-        let lo = mem.rom.read(0xFFFC & 0x7FFF);
-        let hi = mem.rom.read(0xFFFD & 0x7FFF);
-        let start = u16::make(hi,lo);
-        let idx = start & 0x7FFF;
-        crate::mos6502::dissassemble(&self.memory.borrow().rom.prg_rom[idx as usize..(idx + 0x135) as usize], start).unwrap()
     }
 }
 

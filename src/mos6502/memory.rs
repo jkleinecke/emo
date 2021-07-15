@@ -1,15 +1,10 @@
-use super::{Byte,Word};
-
-pub trait Memory {
-    fn read(&self, addr:Word) -> Byte;
-    fn write(&mut self, addr:Word, value:Byte);
-}
+use super::{Byte,Word,MemoryMapped};
 
 pub struct Ram {
     pub data: [Byte;0xFFFF],
 }
 
-impl Memory for Ram {
+impl MemoryMapped for Ram {
     fn read(&self, addr:Word) -> Byte {
         self.data[addr as usize]
     }

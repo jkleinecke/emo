@@ -5,7 +5,9 @@
 #![allow(unused_variables)]
 
 pub mod serialization;
+mod memory;
 
+pub use self::memory::MemoryMapped;
 pub use std::cmp::Eq;
 pub use std::convert::From;
 pub use std::default::Default;
@@ -27,9 +29,6 @@ pub use std::ops::{
 	ShlAssign,
 	Shr,
 	ShrAssign,
-};
-pub use std::convert::{
-    Into
 };
 
 #[macro_export]
@@ -73,7 +72,7 @@ impl WORD for Word {
 }
 
 pub trait Clocked {
-    fn clock(&mut self);  
+    fn clock(&mut self, memory:&mut impl MemoryMapped);  
 }
 
 // pub trait Savable {

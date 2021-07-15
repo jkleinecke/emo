@@ -32,7 +32,7 @@ pub fn run_snake()
         game.update_once();     // right now the game will kill itself on screen input quit
 
         match game.run_mode {
-            game::RunMode::Run => std::thread::sleep(std::time::Duration::new(0, 70_000)),
+            //game::RunMode::Run => std::thread::sleep(std::time::Duration::new(0, 70_000)),
             _ => {}// do nothing
         }
     }
