@@ -38,22 +38,19 @@ impl<'a> CpuContext<'a> {
         self.regs.pc = addr;
     }
 
-    pub fn readfrom_pc(&self, offset:Word) -> Byte {
-        self.memory.read(self.regs.pc.wrapping_add(offset))
-    }
-
     pub fn stack_push(&mut self, v:Byte) 
     {
+        self.regs.sp = self.regs.sp.wrapping_sub(1);     // decrement the stack pointer
         let addr = STACK_BASE + self.regs.sp as Word;    // calc the stack pointer address
+        
         self.memory.write(addr, v) ;               // queue up the bus write
-        self.regs.sp -= 1;                       // decrement the stack pointer
     }
 
     pub fn stack_pop(&mut self) -> Byte
     {
-        self.regs.sp += 1;                       // increment the stack pointer
         let addr = STACK_BASE + self.regs.sp as Word;    // calc the stack pointer address
-        self.memory.read(addr)                   // bus read
+        self.regs.sp = self.regs.sp.wrapping_add(1);     // increment the stack pointer
+        self.memory.read(addr)                   // bus read        
     }
 
     // Status Flags

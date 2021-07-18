@@ -123,7 +123,7 @@ pub const OPCODE_TABLE: [(Operation, AddressingMode, CycleCount, CycleCount, fn(
  * Memory Addressing Modes
  **************************/
 
-fn fetch_operand_address(cpu:&mut CpuContext) -> Word
+pub fn fetch_operand_address(cpu:&mut CpuContext) -> Word
 {
     //--TODO: Handle oops cycle when we cross a page..
 
@@ -140,32 +140,32 @@ fn fetch_operand_address(cpu:&mut CpuContext) -> Word
             addr
         }
         AddressingMode::ZeroPage => {
-            let lo = cpu.readfrom_pc(1);
+            let lo = cpu.instruction.operand[0];
             lo as Word
         }
         AddressingMode::ZeroPageX => {
-            let lo = cpu.readfrom_pc(1);
+            let lo = cpu.instruction.operand[0];
             
             lo.wrapping_add(cpu.regs.x) as Word
         }
         AddressingMode::ZeroPageY => {
-            let lo = cpu.readfrom_pc(1);
+            let lo = cpu.instruction.operand[0];
             
             lo.wrapping_add(cpu.regs.y) as Word
         }
         AddressingMode::Absolute => {
-            let lo = cpu.readfrom_pc(1);
-            let hi = cpu.readfrom_pc(2);     // just making sure the registers are used properly here
+            let lo = cpu.instruction.operand[0];
+            let hi = cpu.instruction.operand[1];     // just making sure the registers are used properly here
             
             Word::make(hi, lo)
         }
         AddressingMode::AbsoluteX => {
-            let ptr = cpu.readfrom_pc(1);
+            let ptr = cpu.instruction.operand[0];
             
             let base = ptr as Word + cpu.regs.x as Word;
             let carry = base.hi() > 0;
             
-            let mut hi = cpu.readfrom_pc(2);
+            let mut hi = cpu.instruction.operand[1];
             
             if carry
             {
@@ -179,12 +179,12 @@ fn fetch_operand_address(cpu:&mut CpuContext) -> Word
             Word::make(hi, base.lo())
         }
         AddressingMode::AbsoluteY => {
-            let ptr = cpu.readfrom_pc(1);
+            let ptr = cpu.instruction.operand[0];
 
             let base = ptr as Word + cpu.regs.y as Word;
             let carry = base.hi() > 0;
             
-            let mut hi = cpu.readfrom_pc(2);
+            let mut hi = cpu.instruction.operand[1];
 
             if carry
             {
@@ -199,9 +199,9 @@ fn fetch_operand_address(cpu:&mut CpuContext) -> Word
         }
         AddressingMode::Indirect => {
             // Only used by the JMP instruction on the 6502
-            let base_lo = cpu.readfrom_pc(1);
-            let base_hi = cpu.readfrom_pc(2);
-            
+            let base_lo = cpu.instruction.operand[0];
+            let base_hi = cpu.instruction.operand[1];
+
             let lo = cpu.memory.read(Word::make(base_hi,base_lo));
             
             // There is a bug in the 6502 that causes this addressing mode to work improperly in some cases.
@@ -213,7 +213,7 @@ fn fetch_operand_address(cpu:&mut CpuContext) -> Word
             Word::make(hi,lo)
         },
         AddressingMode::IndirectX => {
-            let base = cpu.readfrom_pc(1);
+            let base = cpu.instruction.operand[0];
             let addr = base.wrapping_add(cpu.regs.x);
 
             let lo = cpu.memory.read(addr as Word);
@@ -221,7 +221,7 @@ fn fetch_operand_address(cpu:&mut CpuContext) -> Word
             Word::make(hi, lo)
         }
         AddressingMode::IndirectY => {
-            let ptr = cpu.readfrom_pc(1);
+            let ptr = cpu.instruction.operand[0];
 
             let base = cpu.memory.read(ptr as Word) as Word + cpu.regs.y as Word;
             let mut hi = cpu.memory.read(ptr as Word + 1);
@@ -240,7 +240,7 @@ fn fetch_operand_address(cpu:&mut CpuContext) -> Word
             Word::make(hi, base.lo())
         },
         AddressingMode::Relative => {
-            let offset = cpu.readfrom_pc(1);
+            let offset = cpu.instruction.operand[0];
 
             // account for the byte we just read since the inc doesn't happen until
             // after the instruction is done executing

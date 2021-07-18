@@ -22,9 +22,6 @@ use std::fmt;
  ***********************************************************/
 
 pub const PC_START: Word = 0xFFFC;
-const STACK_START: Byte = 0xFF;
-
-const OP_BRK: Byte = 0x00;
 
 #[derive(Copy,Clone)]
 pub struct State {
@@ -137,6 +134,7 @@ impl Clocked for Cpu
             // a reset signal can interrupt a currently running instruction
             self.halted = false;
             self.ir_cycles = 0;
+            self.regs.sp = 0;
         }
 
         if self.halted {
@@ -226,7 +224,7 @@ impl Cpu {
                 ac: 0,
                 x: 0,
                 y: 0,
-                sp: STACK_START,
+                sp: 0xFF,
                 pc: PC_START,
                 p: StatusRegister::from(0x34),
             },

@@ -17,7 +17,9 @@ mod tests;
 mod registers;
 mod memory;
 mod dissassemble;
+mod trace;
 
+pub use self::trace::trace;
 pub use self::dissassemble::*;
 pub use self::memory::{Ram};
 pub use self::registers::*;

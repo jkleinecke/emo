@@ -14,3 +14,11 @@ clap = "2.33"
 version = "0.34"
 #default-features = true
 features = ["bundled","static-link"]
+
+#TODO Add libretro and switch to dynlib generation
+#[lib]
+#crate-type = ["cdynlib"]
+
+#[dependencies]
+#https://github.com/koute/libretro-backend
+#libretro-backend = "0.2"
