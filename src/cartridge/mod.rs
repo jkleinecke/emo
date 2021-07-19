@@ -20,7 +20,7 @@ pub struct Rom {
 }
 
 impl Rom {
-    pub fn new(raw: &Vec<u8>) -> Result<Rom, String> 
+    pub fn new(raw: &[u8]) -> Result<Rom, String> 
     {
         if &raw[0..4] != NES_TAG 
         {
@@ -71,7 +71,7 @@ impl Rom {
 
         // if the rom only uses 16k, just mask off the bits above 16k
         // otherwise just use the address
-        let read_addr = ternary!(self.prg_rom.len() < 0x4000, addr & 0x3FFF, addr);
+        let read_addr = ternary!(self.prg_rom.len() == 0x4000, addr & 0x3FFF, addr);
         
         self.prg_rom[read_addr as usize]
     }

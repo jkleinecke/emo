@@ -7,7 +7,7 @@ mod mos6502;
 mod snake;
 
 extern crate clap;
-use clap::{App,SubCommand, AppSettings};
+use clap::{App,SubCommand,AppSettings};
 
 fn main() {
     let matches = App::new("Emo the emulator")

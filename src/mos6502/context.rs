@@ -40,16 +40,19 @@ impl<'a> CpuContext<'a> {
 
     pub fn stack_push(&mut self, v:Byte) 
     {
+        let addr = Word::make(0x01,self.regs.sp);    // calc the stack pointer address
         self.regs.sp = self.regs.sp.wrapping_sub(1);     // decrement the stack pointer
-        let addr = STACK_BASE + self.regs.sp as Word;    // calc the stack pointer address
         
-        self.memory.write(addr, v) ;               // queue up the bus write
+        if self.reset == false {
+            // writes are disabled during a reset
+            self.memory.write(addr, v) ;               // queue up the bus write
+        }
     }
 
     pub fn stack_pop(&mut self) -> Byte
     {
-        let addr = STACK_BASE + self.regs.sp as Word;    // calc the stack pointer address
         self.regs.sp = self.regs.sp.wrapping_add(1);     // increment the stack pointer
+        let addr = Word::make(0x01,self.regs.sp);    // calc the stack pointer address
         self.memory.read(addr)                   // bus read        
     }
 
@@ -66,7 +69,7 @@ impl<'a> CpuContext<'a> {
      * ALU operations
      *************************/
 
-     pub fn alu_add(&mut self, a:Byte, b:Byte) -> Byte
+     pub fn alu_sums(&mut self, a:Byte, b:Byte) -> Byte
      {
          // a rather ambitious attempt to generalize the alu operations with
          // the status flag updates
@@ -87,15 +90,6 @@ impl<'a> CpuContext<'a> {
          self.regs.p.overflow = signed_overflow.bit(7);
  
          result.lo()
-     }
- 
-     pub fn alu_sub(&mut self, a:Byte, b:Byte) -> Byte
-     {
-         // further ambitious bullshit from me...
-         // two's complement based subtraction is 
-         // the same as a + !b, so just use the add routine
- 
-         self.alu_add(a, !b)
      }
  
      pub fn alu_lsr(&mut self, a:Byte) -> Byte
@@ -151,7 +145,7 @@ mod test {
         let mut cpu = Cpu::new();
         let mut cpuctx = CpuContext::new(&mut cpu, &mut ram);   
         
-        let result = cpuctx.alu_add(13, 211);
+        let result = cpuctx.alu_sums(13, 211);
         
         assert_eq!(result, 224);
         assert_eq!(cpuctx.regs.p.carry, false);
@@ -165,10 +159,10 @@ mod test {
         let mut cpuctx = CpuContext::new(&mut cpu, &mut ram);   
         cpuctx.regs.p.carry = true;
 
-        let result = cpuctx.alu_sub(211, 10);
+        let result = cpuctx.alu_sums(211, !10);
         
         assert_eq!(result, 201);
-        assert_eq!(cpuctx.regs.p, StatusRegister::from("nv-BdIzC"));
+        assert_eq!(cpuctx.regs.p, StatusRegister::from("nv-bdIzC"));
     }
 
     #[test]
@@ -178,7 +172,7 @@ mod test {
         let mut cpu = Cpu::new();
         let mut cpuctx = CpuContext::new(&mut cpu, &mut ram);   
         
-        let result = cpuctx.alu_add(254, 6);
+        let result = cpuctx.alu_sums(254, 6);
         
         assert_eq!(result, 4);
         assert_eq!(cpuctx.regs.p.carry, true);
@@ -192,7 +186,7 @@ mod test {
         let mut cpuctx = CpuContext::new(&mut cpu, &mut ram);   
         cpuctx.regs.p.carry = true;
 
-        let result = cpuctx.alu_sub(10, 20);
+        let result = cpuctx.alu_sums(10, !20);
         
         assert_eq!(result as i8, -10);
         assert_eq!(cpuctx.regs.p, StatusRegister::from("nv-BdIzc"));
@@ -205,8 +199,8 @@ mod test {
         let mut cpu = Cpu::new();
         let mut cpuctx = CpuContext::new(&mut cpu, &mut ram);   
         
-        let temp = cpuctx.alu_add(254,6); // 4 + carry
-        let result = cpuctx.alu_add(temp, 6); 
+        let temp = cpuctx.alu_sums(254,6); // 4 + carry
+        let result = cpuctx.alu_sums(temp, 6); 
         
         assert_eq!(result, 11);
         assert_eq!(cpuctx.regs.p.carry, false);

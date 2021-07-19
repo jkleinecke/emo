@@ -134,7 +134,7 @@ impl Clocked for Cpu
             // a reset signal can interrupt a currently running instruction
             self.halted = false;
             self.ir_cycles = 0;
-            self.regs.sp = 0;
+            self.regs.sp = 0x0;
         }
 
         if self.halted {
@@ -159,7 +159,7 @@ impl Clocked for Cpu
         let ir = ternary!(interrupted, 0, memory.read(self.regs.pc));
         
         // Decode the IR
-        let (operation, addr_mode, c1, c2, exec_op) = OPCODE_TABLE[ir as usize];
+        let (operation, addr_mode, c1, c2, exec_op, illegal) = OPCODE_TABLE[ir as usize];
 
         self.instr = DecodedInstruction {
             ir: ir,
