@@ -1,4 +1,10 @@
-use super::{Cpu,Word,WORD,Byte,Bit,MemoryMapped,DecodedInstruction,Registers,StatusRegister,BitTest};
+use super::{
+    Word,WORD,Byte,Bit,BitTest,ternary,
+    MemoryMapped,
+    DecodedInstruction,
+    Registers,StatusRegister,
+    Cpu
+};
 
 const STACK_BASE: Word = 0x100;
 
@@ -135,7 +141,7 @@ impl<'a> CpuContext<'a> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::mos6502::Ram;
+    use crate::memory::Ram;
     
 
     #[test]

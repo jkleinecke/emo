@@ -4,7 +4,7 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use super::{MemoryMapped,Ram,Bit,BitTest,Clocked,WORD,Byte,Word,StatusRegister,Registers,CpuContext};
+use super::{MemoryMapped,Ram,Bit,BitTest,Clocked,WORD,Byte,Word,StatusRegister,Registers,CpuContext,ternary};
 use super::operations::*;
 use std::fmt;
 

@@ -1,5 +1,5 @@
 
-use crate::common::{BitTest};
+pub use utilities::{BitTest,ternary};
 
 const NES_TAG: [u8; 4] = [0x4E, 0x45, 0x53, 0x1A];
 const PRG_ROM_PAGE_SIZE: usize = 16384;

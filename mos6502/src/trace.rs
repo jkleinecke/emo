@@ -1,7 +1,7 @@
 use super::{
     WORD,Word,
     Byte,BitTest,
-    Cpu,CpuContext,
+    Cpu,CpuContext,Clocked,
     StatusRegister,
     MemoryMapped,
     DecodedInstruction,
@@ -9,6 +9,7 @@ use super::{
     fetch_operand_address,
     OPCODE_TABLE,
     ADDR_OPSIZE_TABLE,
+    ternary
 };
 
 
@@ -93,7 +94,7 @@ pub fn trace(cpu:&mut Cpu, memory:&mut dyn MemoryMapped) -> String {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::mos6502::{Ram,Clocked};
+    use crate::memory::Ram;
 
     #[test]
     fn test_format_trace() {

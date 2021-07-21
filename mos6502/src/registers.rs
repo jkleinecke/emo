@@ -1,4 +1,4 @@
-use super::{Byte,Word,Bit,BitTest};
+use super::{Byte,Word,Bit,BitTest,ternary};
 
 pub use std::convert::{
 	From,

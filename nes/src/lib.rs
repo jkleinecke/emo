@@ -1,7 +1,15 @@
 #![allow(unused_imports)]
+#![allow(non_upper_case_globals)]
+#![allow(dead_code)]
+#![allow(unused_variables)]
 
-use super::{MemoryMapped,Cpu,Clocked,Byte,Word,WORD,Rom,Bus};
-use crate::mos6502::trace;
+mod bus;
+
+pub use self::bus::Bus;
+
+use mos6502::{Cpu,PC_START,MemoryMapped,State,trace};
+use utilities::{Clocked,Byte,Word,WORD,BitTest};
+use cartridge::Rom;
 
 #[cfg(test)]
 mod test {
@@ -9,8 +17,8 @@ mod test {
 
     #[test]
     fn testrom_line1() {
-        let testrombytes = include_bytes!("../../tests/nestest.nes");
-        let truthlog = include_str!("../../tests/nestest_no_cycle.log");
+        let testrombytes = include_bytes!("../../test_files/nestest.nes");
+        let truthlog = include_str!("../../test_files/nestest_no_cycle.log");
         let mut truthlines = truthlog.lines();
 
         let testrom = Rom::new(testrombytes).unwrap();
@@ -30,8 +38,8 @@ mod test {
 
     #[test]
     fn testrom_cpulog_c68b() {
-        let testrombytes = include_bytes!("../../tests/nestest.nes");
-        let truthlog = include_str!("../../tests/nestest_no_cycle.log");
+        let testrombytes = include_bytes!("../../test_files/nestest.nes");
+        let truthlog = include_str!("../../test_files/nestest_no_cycle.log");
         let mut truthlines = truthlog.lines();
 
         let testrom = Rom::new(testrombytes).unwrap();
@@ -64,3 +72,4 @@ mod test {
         }
     }
 }
+
