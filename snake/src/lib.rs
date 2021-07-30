@@ -4,12 +4,34 @@ extern crate libretro_backend;
 
 //mod game;
 
+use rand::Rng;
+use rand::prelude::ThreadRng;
+
+fn color(byte: Byte) -> (u8,u8,u8) {
+    match byte {
+        0 => (0,0,0),
+        1 => (255,255,255),
+        2 | 9 => (125,125,125),
+        3 | 10 => (255,0,0),
+        4 | 11 => (0,255,0),
+        5 | 12 => (0,0,255),
+        6 | 13 => (255,0,255),
+        7 | 14 => (255,255,0),
+        _ => (0,255,255),
+    }
+}
+
 use mos6502::{
     Cpu,
     MemoryMapped,
     Clocked,
-    Byte
+    Byte, Word, WORD
 };
+
+
+use utilities::ternary;
+
+use cartridge::Rom;
 
 use libretro_backend::{
     CoreInfo,
@@ -19,21 +41,78 @@ use libretro_backend::{
     LoadGameResult,
     Region,
     RuntimeHandle,
-    
+    Key,
 };
+
+struct SnakeMemory {
+    ram: [Byte;0x800],
+    rom: Option<Rom>,
+    vram: [Byte;32*32*4],
+    vram_updated: bool,
+}
+
+impl MemoryMapped for SnakeMemory {
+    fn read(&self, addr:Word) -> Byte {
+        match addr
+        {
+            0x8000 ..= 0xFFFF => if let Some(rom) = &self.rom {rom.read(addr & 0x7FFF)}else{0},
+            0x0000 ..= 0x1FFF => self.ram[(addr & 0x7FF) as usize],
+            _ => 0
+        }
+    }
+    fn write(&mut self, addr:Word, value:Byte) {
+        match addr
+        {
+            0x0000 ..= 0x01FF => self.ram[addr as usize] = value,
+            0x0200 ..= 0x05FF => {
+                self.ram[addr as usize] = value;
+                self.vram_updated = true;
+                let idx = (addr - 0x0200) * 4;
+                let (r,g,b) = color(value);
+
+                self.vram[idx as usize + 0] = r;
+                self.vram[idx as usize + 1] = g;
+                self.vram[idx as usize + 2] = b;
+            }
+            0x0000..= 0x1FFF => { 
+                self.ram[(addr & 0x7FF) as usize] = value
+            },
+            _ => { panic!("Invalid write") },
+        };
+    }
+}
+
+impl SnakeMemory {
+    pub fn new() -> Self {
+        SnakeMemory {
+            ram: [0;0x800],  
+            rom: None,  
+            vram: [0;32*32*4],
+            vram_updated: false,
+        }
+    }
+
+    pub fn load_rom(&mut self, rom_bytes: &[u8]) -> Result<&Self, String> {
+        self.rom = Rom::new(rom_bytes).ok();
+
+        Result::Ok(self)
+    }
+}
 
 struct SnakeCore {
     cpu: Cpu,
-    //memory: SnakeMemory,
-
-    vram: [Byte;32*32*3],
+    game: Option<GameData>,
+    memory: SnakeMemory,
+    rng: ThreadRng,
 }
 
 impl SnakeCore {
     pub fn new() -> Self {
         Self {
             cpu: Cpu::new(),
-            vram: [0;32*32*3]
+            game: None,
+            memory: SnakeMemory::new(),
+            rng: rand::thread_rng(),
         }
     }
 }
@@ -47,34 +126,88 @@ impl Default for SnakeCore {
 impl libretro_backend::Core for SnakeCore {
     fn info() -> CoreInfo {
         CoreInfo::new( "Snake", env!( "CARGO_PKG_VERSION" ))
+            .supports_roms_with_extension( "nes" )
     }
 
     fn on_load_game(&mut self, game_data: GameData) -> LoadGameResult {
-        let av_info = AudioVideoInfo::new()
-            .video(32, 32, 60.0, PixelFormat::ARGB8888)
-            .region(Region::NTSC);
+        if game_data.is_empty() {
+            return LoadGameResult::Failed( game_data );
+        }
 
-        LoadGameResult::Success( av_info );
+        let romresult = if let Some( data ) = game_data.data() {
+            Rom::new(data)
+        } else if let Some( path ) = game_data.path() {
+            Rom::from_file(path)
+        }
+        else {
+            unreachable!();
+        };
+
+        match romresult {
+            Ok( rom ) => {
+                self.game = Some(game_data);
+                self.memory.rom = Some(rom);
+                self.cpu.reset = true;
+
+                let av_info = AudioVideoInfo::new()
+                    .video(32, 32, 10.0, PixelFormat::ARGB8888)
+                    //.audio( 44100.0 )
+                    .region(Region::NTSC);
+
+                LoadGameResult::Success( av_info )
+            }
+            Err( _ ) => {
+                LoadGameResult::Failed( game_data )
+            }
+        }
     }
 
     fn on_unload_game(&mut self) -> GameData {
-
+        self.game.take().unwrap()
     }
+
+
 
     fn on_run(&mut self, handle: &mut RuntimeHandle) {
 
-        
-
         // clock the cpu until a vram write is made
+        while self.memory.vram_updated == false {
+            if handle.is_key_pressed(Key::W) { // W
+                self.memory.write(0x00FF, 0x77);
+            }
+            else if handle.is_key_pressed(Key::S) { // S
+                self.memory.write(0x00FF, 0x73);
+            }
+            else if handle.is_key_pressed(Key::A) { // A
+                self.memory.write(0x00FF, 0x61);
+            }
+            else if handle.is_key_pressed(Key::D) { // D
+                self.memory.write(0x00FF, 0x64);
+            }
 
+            // setup access to random number value
+            self.memory.write(0x00FE, self.rng.gen_range(1,16) as u8);
+
+            self.cpu.clock(&mut self.memory);
+            ::std::thread::sleep(std::time::Duration::new(0, 70_000));
+        }
+
+        handle.upload_video_frame(&self.memory.vram);
+        self.memory.vram_updated = false;
         // then call handle.upload_video_frame()
+       
     }
 
     fn on_reset(&mut self) {
         self.cpu.reset = true;
         // flush video memory to black
+        self.memory.ram = [0;0x800];
+        self.memory.vram = [0;32*32*4];
+        self.memory.vram_updated = false;
     }
 }
+
+libretro_core!( SnakeCore );
 
 // use game::SnakeGame;
 // use sdl2::pixels::PixelFormatEnum;

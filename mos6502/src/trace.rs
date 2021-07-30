@@ -3,6 +3,7 @@ use super::{
     Byte,BitTest,
     Cpu,CpuContext,Clocked,
     StatusRegister,
+    Registers,
     MemoryMapped,
     DecodedInstruction,
     AddressingMode,
@@ -13,17 +14,17 @@ use super::{
 };
 
 
-pub fn trace(cpu:&mut Cpu, memory:&mut dyn MemoryMapped) -> String {
+pub fn trace(regs:&mut Registers, memory:&mut dyn MemoryMapped) -> String {
 
-    let ir = memory.read(cpu.regs.pc);
-    let op1 = memory.read(cpu.regs.pc + 1);
-    let op2 = memory.read(cpu.regs.pc + 2);
+    let ir = memory.read(regs.pc);
+    let op1 = memory.read(regs.pc + 1);
+    let op2 = memory.read(regs.pc + 2);
 
     let (operation, addr_mode, c1, c2, exec_op, illegal) = OPCODE_TABLE[ir as usize];
 
     let instr = DecodedInstruction {
         ir: ir,
-        ir_address: cpu.regs.pc,
+        ir_address: regs.pc,
         opcode: operation,
         addr_mode: addr_mode,
         opsize: ADDR_OPSIZE_TABLE[addr_mode as usize],
@@ -38,8 +39,7 @@ pub fn trace(cpu:&mut Cpu, memory:&mut dyn MemoryMapped) -> String {
             _ => String::from(""),
         }
         2 => {
-            let mut context = CpuContext::new(cpu, memory);
-            context.instruction = &instr;
+            let mut context = CpuContext::new(regs, &instr, false, false, false, memory);
             let address = fetch_operand_address(&mut context);
             let value = context.memory.read(address);
 
@@ -48,15 +48,14 @@ pub fn trace(cpu:&mut Cpu, memory:&mut dyn MemoryMapped) -> String {
                 AddressingMode::ZeroPage => format!("${:02x} = {:02x}", address, value),
                 AddressingMode::ZeroPageX => format!("${:02x},X @ {:02x} = {:02x}", op1, address, value),
                 AddressingMode::ZeroPageY => format!("${:02x},Y @ {:02x} = {:02x}", op1, address, value),
-                AddressingMode::IndirectX => format!("(${:02x},X) @ {:02x} = {:04x} = {:02x}", op1, op1.wrapping_add(cpu.regs.x), address, value),
-                AddressingMode::IndirectY => format!("(${:02x}),Y = {:04x} @ {:04x} = {:02x}", op1, address.wrapping_sub(cpu.regs.y as u16), address, value),
+                AddressingMode::IndirectX => format!("(${:02x},X) @ {:02x} = {:04x} = {:02x}", op1, op1.wrapping_add(regs.x), address, value),
+                AddressingMode::IndirectY => format!("(${:02x}),Y = {:04x} @ {:04x} = {:02x}", op1, address.wrapping_sub(regs.y as u16), address, value),
                 AddressingMode::Relative => format!("${:04x}", address),
                 _ => panic!("unexpected addressing mode {:?} has ops-len 2. code {:02x}", instr.addr_mode, ir),
             }
         }
         3 => {
-            let mut context = CpuContext::new(cpu, memory);
-            context.instruction = &instr;
+            let mut context = CpuContext::new(regs, &instr, false, false, false, memory);
             let op16 = Word::make(op2,op1);
             let address = fetch_operand_address(&mut context);
             let value = context.memory.read(address);
@@ -87,7 +86,7 @@ pub fn trace(cpu:&mut Cpu, memory:&mut dyn MemoryMapped) -> String {
     //--TODO: Fix formatting issue with the opcode...
     let asm_str = format!("{:04x}  {:8} {}{: >4} {}", instr.ir_address, hex, ternary!(illegal>0,"*"," "),instr.opcode, tmp).trim().to_string();
 
-    format!("{:47} A:{:02x} X:{:02x} Y:{:02x} P:{:02x} SP:{:02x}", asm_str, cpu.regs.ac, cpu.regs.x, cpu.regs.y, cpu.regs.p.to_byte(), cpu.regs.sp)
+    format!("{:47} A:{:02x} X:{:02x} Y:{:02x} P:{:02x} SP:{:02x}", asm_str, regs.ac, regs.x, regs.y, regs.p.to_byte(), regs.sp)
         .to_ascii_uppercase()
 }
 
@@ -115,7 +114,7 @@ mod test {
         cpu.regs.x = 2;
         cpu.regs.y = 3;
         
-        let t1 = trace(&mut cpu, &mut ram);
+        let t1 = trace(&mut cpu.regs, &mut ram);
         assert_eq!(
             "0064  A2 01     LDX #$01                        A:01 X:02 Y:03 P:24 SP:FD",
             t1
@@ -123,7 +122,7 @@ mod test {
 
         cpu.ir_cycles = 0;
         cpu.clock(&mut ram);
-        let t2 = trace(&mut cpu, &mut ram);
+        let t2 = trace(&mut cpu.regs, &mut ram);
         assert_eq!(
             "0066  CA        DEX                             A:01 X:01 Y:03 P:24 SP:FD",
             t2
@@ -131,7 +130,7 @@ mod test {
         
         cpu.ir_cycles = 0;
         cpu.clock(&mut ram);
-        let t3 = trace(&mut cpu, &mut ram);
+        let t3 = trace(&mut cpu.regs, &mut ram);
         assert_eq!(
             "0067  88        DEY                             A:01 X:00 Y:03 P:26 SP:FD",
             t3
@@ -159,7 +158,7 @@ mod test {
         cpu.regs.pc = 0x64;
         cpu.regs.y = 0;
        
-        let t1 = trace(&mut cpu, &mut ram);
+        let t1 = trace(&mut cpu.regs, &mut ram);
         assert_eq!(
             "0064  11 33     ORA ($33),Y = 0400 @ 0400 = AA  A:00 X:00 Y:00 P:24 SP:FD",
             t1
