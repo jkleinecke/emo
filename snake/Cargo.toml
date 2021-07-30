@@ -10,6 +10,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 rand = "=0.7.3"
+#libretro-backend = "0.2.1"
 
 [dependencies.libretro-backend]
 path="../libretro-backend"

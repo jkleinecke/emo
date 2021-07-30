@@ -10,9 +10,8 @@
             "request": "launch",
             "name": "Launch RetroArch - Snake",
             "program": "E:/RetroArch-Win64/retroarch.exe",
-            "args": ["--libretro=target/debug/snake.dll", "snake.nes"],
-            "cwd": "${workspaceFolder}/snake/",
-            "stopOnEntry": true
+            "args": ["-L", "target/debug/snake.dll", "snake.nes"],
+            "cwd": "${workspaceFolder}/snake/"
         },
         {
             "type": "lldb",

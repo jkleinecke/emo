@@ -143,12 +143,12 @@ impl Clocked for Cpu
 
         // todo - Handle any cpu interrupts
 
-        if self.ir_cycles > 0
+        if !self.reset && self.ir_cycles < self.instr.cycles
         {
             // wait the appropriate number of cycles
             // for the last instruction that was executed
 
-            self.ir_cycles -= 1;
+            self.ir_cycles += 1;
             return;             
         }
         
@@ -178,7 +178,7 @@ impl Clocked for Cpu
             return;
         }
 
-        self.ir_cycles = c1 - 1 ;   // minus 1 for "this" cycle
+        self.ir_cycles = 0;   
 
         self.instr.operand[0] = ternary!(self.instr.opsize > 1, memory.read(self.regs.pc + 1), 0);
         self.instr.operand[1] = ternary!(self.instr.opsize > 2, memory.read(self.regs.pc + 2), 0);
@@ -193,7 +193,7 @@ impl Clocked for Cpu
             context.regs.pc = context.regs.pc.wrapping_add(opsize as Word);
         }
 
-        self.ir_cycles += ternary!(context.oops, 1, 0); // account for the oops cycle if the oops condition was encountered
+        //self.instr.cycles += ternary!(context.oops, 1, 0); // account for the oops cycle if the oops condition was encountered 
         self.halted = context.halt; // halt if necessary...
 
         // reset the flags

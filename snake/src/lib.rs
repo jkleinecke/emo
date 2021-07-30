@@ -171,7 +171,7 @@ impl libretro_backend::Core for SnakeCore {
     fn on_run(&mut self, handle: &mut RuntimeHandle) {
 
         // clock the cpu until a vram write is made
-        while self.memory.vram_updated == false {
+        //while self.memory.vram_updated == false {
             if handle.is_key_pressed(Key::W) { // W
                 self.memory.write(0x00FF, 0x77);
             }
@@ -189,13 +189,14 @@ impl libretro_backend::Core for SnakeCore {
             self.memory.write(0x00FE, self.rng.gen_range(1,16) as u8);
 
             self.cpu.clock(&mut self.memory);
-            ::std::thread::sleep(std::time::Duration::new(0, 70_000));
-        }
+            //::std::thread::sleep(std::time::Duration::new(0, 70_000));
+        //}
 
-        handle.upload_video_frame(&self.memory.vram);
-        self.memory.vram_updated = false;
-        // then call handle.upload_video_frame()
-       
+        if self.memory.vram_updated {
+            handle.upload_video_frame(&self.memory.vram);
+            self.memory.vram_updated = false;
+        }
+        
     }
 
     fn on_reset(&mut self) {

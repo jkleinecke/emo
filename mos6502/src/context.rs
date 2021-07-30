@@ -11,17 +11,16 @@ const STACK_BASE: Word = 0x100;
 pub struct CpuContext<'a> {
     pub regs: &'a mut Registers,
     pub memory: &'a mut dyn MemoryMapped,
-    pub instruction: &'a DecodedInstruction,
+    pub instruction: &'a mut DecodedInstruction,
     pub reset: Bit,
     pub nmi: Bit,
     pub irq: Bit,
-    pub oops: bool,
     pub halt: bool,
     pub increment_programcounter: bool,
 }
 
 impl<'a> CpuContext<'a> {
-    pub fn new(regs: &'a mut Registers, instruction: &'a DecodedInstruction, reset: bool, nmi: bool, irq: bool, memory: &'a mut dyn MemoryMapped) -> Self {
+    pub fn new(regs: &'a mut Registers, instruction: &'a mut DecodedInstruction, reset: bool, nmi: bool, irq: bool, memory: &'a mut dyn MemoryMapped) -> Self {
         Self {
             regs,
             memory,
@@ -29,7 +28,6 @@ impl<'a> CpuContext<'a> {
             reset,
             nmi,
             irq,
-            oops: false,
             halt: false,
             increment_programcounter: true,
         }

@@ -22,7 +22,7 @@ pub fn trace(regs:&mut Registers, memory:&mut dyn MemoryMapped) -> String {
 
     let (operation, addr_mode, c1, c2, exec_op, illegal) = OPCODE_TABLE[ir as usize];
 
-    let instr = DecodedInstruction {
+    let mut instr = DecodedInstruction {
         ir: ir,
         ir_address: regs.pc,
         opcode: operation,
@@ -39,7 +39,7 @@ pub fn trace(regs:&mut Registers, memory:&mut dyn MemoryMapped) -> String {
             _ => String::from(""),
         }
         2 => {
-            let mut context = CpuContext::new(regs, &instr, false, false, false, memory);
+            let mut context = CpuContext::new(regs, &mut instr, false, false, false, memory);
             let address = fetch_operand_address(&mut context);
             let value = context.memory.read(address);
 
@@ -55,7 +55,7 @@ pub fn trace(regs:&mut Registers, memory:&mut dyn MemoryMapped) -> String {
             }
         }
         3 => {
-            let mut context = CpuContext::new(regs, &instr, false, false, false, memory);
+            let mut context = CpuContext::new(regs, &mut instr, false, false, false, memory);
             let op16 = Word::make(op2,op1);
             let address = fetch_operand_address(&mut context);
             let value = context.memory.read(address);

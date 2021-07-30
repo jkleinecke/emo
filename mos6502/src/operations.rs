@@ -174,7 +174,7 @@ pub fn fetch_operand_address(cpu:&mut CpuContext) -> Word
                 // addition overflowed which means we need to spend
                 // an extra cycle adding the carry to the hi-byte
                 hi = hi.wrapping_add(1);
-                cpu.oops = true;
+                cpu.instruction.cycles += 1;    // add 1 to the cycle count for the oops cycle
             }
 
             Word::make(hi, base.lo())
@@ -193,7 +193,7 @@ pub fn fetch_operand_address(cpu:&mut CpuContext) -> Word
                 // addition overflowed which means we need to spend
                 // an extra cycle adding the carry to the hi-byte
                 hi = hi.wrapping_add(1);
-                cpu.oops = true;
+                cpu.instruction.cycles += 1;    // add 1 to the cycle count for the oops cycle
             }
 
             Word::make(hi, base.lo())
@@ -235,7 +235,7 @@ pub fn fetch_operand_address(cpu:&mut CpuContext) -> Word
                 // addition overflowed which means we need to spend
                 // an extra cycle adding the carry to the hi-byte
                 hi = hi.wrapping_add(1); // add the carry
-                cpu.oops = true;
+                cpu.instruction.cycles += 1;    // add 1 to the cycle count for the oops cycle
             }
 
             Word::make(hi, base.lo())
