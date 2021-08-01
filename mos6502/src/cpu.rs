@@ -143,12 +143,12 @@ impl Clocked for Cpu
 
         // todo - Handle any cpu interrupts
 
-        if self.ir_cycles > 0
+        if !self.reset && self.ir_cycles < self.instr.cycles
         {
             // wait the appropriate number of cycles
             // for the last instruction that was executed
 
-            self.ir_cycles -= 1;
+            self.ir_cycles += 1;
             return;             
         }
         
@@ -178,31 +178,23 @@ impl Clocked for Cpu
             return;
         }
 
-        self.ir_cycles = c1 - 1 ;   // minus 1 for "this" cycle
+        self.ir_cycles = 0;   
 
         self.instr.operand[0] = ternary!(self.instr.opsize > 1, memory.read(self.regs.pc + 1), 0);
         self.instr.operand[1] = ternary!(self.instr.opsize > 2, memory.read(self.regs.pc + 2), 0);
 
-        let mut inc_pc = true;
-        let mut oops = false;
-        let mut halt = false;
+        let opsize = self.instr.opsize;
+        let mut context = CpuContext::new(&mut self.regs, &mut self.instr, self.reset, self.nmi, self.irq, memory);
 
-        {
-            let mut context = CpuContext::new(self, memory);
+        // Execute the IR operation
+        exec_op(&mut context);
 
-            // Execute the IR operation
-            exec_op(&mut context);
-            inc_pc = context.increment_programcounter;
-            oops = context.oops;
-            halt = context.halt;
+        if context.increment_programcounter {
+            context.regs.pc = context.regs.pc.wrapping_add(opsize as Word);
         }
 
-        if inc_pc {
-            self.regs.pc = self.regs.pc.wrapping_add(self.instr.opsize as Word);
-        }
-
-        self.ir_cycles += ternary!(oops, 1, 0); // account for the oops cycle if the oops condition was encountered
-        self.halted = halt; // halt if necessary...
+        //self.instr.cycles += ternary!(context.oops, 1, 0); // account for the oops cycle if the oops condition was encountered 
+        self.halted = context.halt; // halt if necessary...
 
         // reset the flags
         // reset precedes all other interrupts

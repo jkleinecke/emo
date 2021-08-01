@@ -4,7 +4,21 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
-    
+        {
+            "type": "lldb",
+            "preLaunchTask": "Rust: cargo build - snake",
+            "request": "launch",
+            "name": "Launch RetroArch - Snake",
+            "program": "E:/RetroArch-Win64/retroarch.exe",
+            "args": ["-L", "target/debug/snake.dll", "snake.nes"],
+            "cwd": "${workspaceFolder}/snake/"
+        },
+        {
+            "type": "lldb",
+            "request": "attach",
+            "name": "Attach RetroArch",
+            "program": "E:/RetroArch-Win64/retroarch.exe"
+        },
         {
             "type": "lldb",
             "request": "launch",

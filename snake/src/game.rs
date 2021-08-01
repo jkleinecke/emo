@@ -12,17 +12,17 @@ use crate::mos6502::*;
 use crate::cartridge::Rom;
 
 
-fn color(byte: Byte) -> Color {
+fn color(byte: Byte) -> (u8,u8,u8) {
     match byte {
-        0 => sdl2::pixels::Color::BLACK,
-        1 => sdl2::pixels::Color::WHITE,
-        2 | 9 => sdl2::pixels::Color::GREY,
-        3 | 10 => sdl2::pixels::Color::RED,
-        4 | 11 => sdl2::pixels::Color::GREEN,
-        5 | 12 => sdl2::pixels::Color::BLUE,
-        6 | 13 => sdl2::pixels::Color::MAGENTA,
-        7 | 14 => sdl2::pixels::Color::YELLOW,
-        _ => sdl2::pixels::Color::CYAN,
+        0 => (0,0,0),
+        1 => (255,255,255),
+        2 | 9 => (125,125,125),
+        3 | 10 => (255,0,0),
+        4 | 11 => (0,255,0),
+        5 | 12 => (0,0,255),
+        6 | 13 => (255,0,255),
+        7 | 14 => (255,255,0),
+        _ => (0,255,255),
     }
 }
 

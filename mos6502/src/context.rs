@@ -11,25 +11,23 @@ const STACK_BASE: Word = 0x100;
 pub struct CpuContext<'a> {
     pub regs: &'a mut Registers,
     pub memory: &'a mut dyn MemoryMapped,
-    pub instruction: &'a DecodedInstruction,
+    pub instruction: &'a mut DecodedInstruction,
     pub reset: Bit,
     pub nmi: Bit,
     pub irq: Bit,
-    pub oops: bool,
     pub halt: bool,
     pub increment_programcounter: bool,
 }
 
 impl<'a> CpuContext<'a> {
-    pub fn new(cpu: &'a mut Cpu, memory: &'a mut dyn MemoryMapped) -> Self {
+    pub fn new(regs: &'a mut Registers, instruction: &'a mut DecodedInstruction, reset: bool, nmi: bool, irq: bool, memory: &'a mut dyn MemoryMapped) -> Self {
         Self {
-            regs: &mut cpu.regs,
+            regs,
             memory,
-            instruction: &cpu.instr,
-            reset: cpu.reset,
-            nmi: cpu.nmi,
-            irq: cpu.irq,
-            oops: false,
+            instruction,
+            reset,
+            nmi,
+            irq,
             halt: false,
             increment_programcounter: true,
         }
@@ -149,7 +147,7 @@ mod test {
     {
         let mut ram = Ram::new();
         let mut cpu = Cpu::new();
-        let mut cpuctx = CpuContext::new(&mut cpu, &mut ram);   
+        let mut cpuctx = CpuContext::new(&mut cpu.regs, &mut cpu.instr, false, false, false, &mut ram);   
         
         let result = cpuctx.alu_sums(13, 211);
         
@@ -162,7 +160,7 @@ mod test {
     {
         let mut ram = Ram::new();
         let mut cpu = Cpu::new();
-        let mut cpuctx = CpuContext::new(&mut cpu, &mut ram);   
+        let mut cpuctx = CpuContext::new(&mut cpu.regs, &mut cpu.instr, false, false, false, &mut ram);   
         cpuctx.regs.p.carry = true;
 
         let result = cpuctx.alu_sums(211, !10);
@@ -176,7 +174,7 @@ mod test {
     {
         let mut ram = Ram::new();
         let mut cpu = Cpu::new();
-        let mut cpuctx = CpuContext::new(&mut cpu, &mut ram);   
+        let mut cpuctx = CpuContext::new(&mut cpu.regs, &mut cpu.instr, false, false, false, &mut ram);   
         
         let result = cpuctx.alu_sums(254, 6);
         
@@ -189,7 +187,7 @@ mod test {
     {
         let mut ram = Ram::new();
         let mut cpu = Cpu::new();
-        let mut cpuctx = CpuContext::new(&mut cpu, &mut ram);   
+        let mut cpuctx = CpuContext::new(&mut cpu.regs, &mut cpu.instr, false, false, false, &mut ram);   
         cpuctx.regs.p.carry = true;
 
         let result = cpuctx.alu_sums(10, !20);
@@ -203,7 +201,7 @@ mod test {
     {
         let mut ram = Ram::new();
         let mut cpu = Cpu::new();
-        let mut cpuctx = CpuContext::new(&mut cpu, &mut ram);   
+        let mut cpuctx = CpuContext::new(&mut cpu.regs, &mut cpu.instr, false, false, false, &mut ram);   
         
         let temp = cpuctx.alu_sums(254,6); // 4 + carry
         let result = cpuctx.alu_sums(temp, 6); 

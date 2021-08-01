@@ -1,0 +1,3 @@
+[submodule "libretro-backend"]
+	path = libretro-backend
+	url = git@github.com:jkleinecke/libretro-backend.git
