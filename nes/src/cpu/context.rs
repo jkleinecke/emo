@@ -139,7 +139,7 @@ impl<'a> CpuContext<'a> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::memory::Ram;
+    use super::super::Ram;
     
 
     #[test]

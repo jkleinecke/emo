@@ -4,12 +4,22 @@
 #![allow(unused_variables)]
 
 mod bus;
+pub mod utilities;
+pub mod cpu;
+mod cartridge;
 
 pub use self::bus::Bus;
-
-use mos6502::{Cpu,PC_START,MemoryMapped,State,trace};
-use utilities::{Clocked,Byte,Word,WORD,BitTest};
-use cartridge::Rom;
+pub use self::cpu::{
+    Cpu,
+    MemoryMapped,
+    State,
+    trace
+};
+pub use utilities::*;
+pub use self::cartridge::{
+    Rom,
+    Mirroring
+};
 
 #[cfg(test)]
 mod test {
@@ -31,7 +41,7 @@ mod test {
         cpu.ir_cycles = 0;      // skip the 7 reset cycles for the test
         cpu.regs.pc = 0xC000;   // is this supposed to be what is happening?  otherwise this test won't work correctly...
 
-        let t1 = trace(&mut cpu, &mut membus);
+        let t1 = trace(&mut cpu.regs, &mut membus);
         let line = truthlines.next().unwrap();
         assert_eq!(line, t1);
     }
@@ -60,7 +70,7 @@ mod test {
                 break;
             }
 
-            let t1 = trace(&mut cpu, &mut membus);
+            let t1 = trace(&mut cpu.regs, &mut membus);
             assert_eq!(line, t1);
 
             println!("{}: {} - ✔️", lineno, t1);

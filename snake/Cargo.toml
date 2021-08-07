@@ -15,11 +15,5 @@ rand = "=0.7.3"
 [dependencies.libretro-backend]
 path="../libretro-backend"
 
-[dependencies.mos6502]
-path="../mos6502"
-
-[dependencies.cartridge]
-path="../cartridge"
-
-[dependencies.utilities]
-path="../utilities"
+[dependencies.nes]
+path="../nes"

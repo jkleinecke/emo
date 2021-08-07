@@ -93,7 +93,7 @@ pub fn trace(regs:&mut Registers, memory:&mut dyn MemoryMapped) -> String {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::memory::Ram;
+    use super::super::Ram;
 
     #[test]
     fn test_format_trace() {

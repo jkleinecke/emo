@@ -1,7 +1,6 @@
 
 #[macro_use]
 extern crate libretro_backend;
-
 //mod game;
 
 use rand::Rng;
@@ -21,17 +20,13 @@ fn color(byte: Byte) -> (u8,u8,u8) {
     }
 }
 
-use mos6502::{
+use nes::{
     Cpu,
+    Rom,
     MemoryMapped,
     Clocked,
-    Byte, Word, WORD
+    Byte, Word
 };
-
-
-use utilities::ternary;
-
-use cartridge::Rom;
 
 use libretro_backend::{
     CoreInfo,
@@ -90,12 +85,6 @@ impl SnakeMemory {
             vram: [0;32*32*4],
             vram_updated: false,
         }
-    }
-
-    pub fn load_rom(&mut self, rom_bytes: &[u8]) -> Result<&Self, String> {
-        self.rom = Rom::new(rom_bytes).ok();
-
-        Result::Ok(self)
     }
 }
 

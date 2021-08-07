@@ -8,7 +8,7 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-pub use utilities::{BitTest,Clocked,WORD,Word,Byte,Bit,MemoryMapped,ternary};
+pub use super::{BitTest,Clocked,WORD,Word,Byte,Bit,MemoryMapped,ternary};
 
 mod cpu;
 mod context;
